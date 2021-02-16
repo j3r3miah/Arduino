@@ -52,7 +52,8 @@ void loop() {
   button.update();
   if (button.fell()) {
       led.blink(1);
-      lcd.toggleBacklight();
+      // lcd.toggleBacklight();
+      WiFi.end();
   }
 
   updateWifi();
@@ -95,17 +96,22 @@ void updateWifi() {
 
     if (status == WL_CONNECTED) {
       server.begin();
+      // print ip address once, upon connection
       WiFi.localIP().printTo(*(lcd.getPrinter(0, 2)));
       led.blink(2);
     }
     else if (status == WL_CONNECT_FAILED
              || status == WL_CONNECTION_LOST
-             || status == WL_DISCONNECTED) {
+             || status == WL_DISCONNECTED
+             || status == WL_IDLE_STATUS) {
+      lcd.clear(2); // clear ip
+      lcd.clear(3); // clear rssi
       wifiStatus = WiFi.begin(ssid, password);
     }
   }
 
   if (wifiStatus == WL_CONNECTED) {
+    // print signal strength every second or so
     if (millis() % 1000 < 5) {
       sprintf(buf, "%ld dBm", WiFi.RSSI());
       lcd.print(3, buf);
