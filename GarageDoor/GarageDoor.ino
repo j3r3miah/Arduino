@@ -13,8 +13,9 @@ char ssid[] = SECRET_SSID;
 char password[] = SECRET_PASS;
 char apiKey[] = SECRET_API_KEY;
 
-#define LED_PIN 13
 #define BUTTON_PIN 2
+#define OPENER_PIN 8
+#define LED_PIN 13
 
 int wifiStatus = WL_IDLE_STATUS;
 WiFiServer server(80);
@@ -36,6 +37,8 @@ void setup() {
 
   button.attach(BUTTON_PIN, INPUT_PULLDOWN);
   button.interval(25);
+
+  pinMode(OPENER_PIN, OUTPUT);
 
   lcd.init();
   // lcd.sleepAfter(10000);
@@ -145,23 +148,35 @@ const char *statusString(uint8_t status) {
 }
 
 void handleWebRequest(WiFiClient client) {
-    Serial.println("new client");           // print a message out the serial port
     String currentLine = "";                // make a String to hold incoming data from the client
+    String command = "";
     while (client.connected()) {            // loop while the client's connected
       if (client.available()) {             // if there's bytes to read from the client,
         char c = client.read();             // read a byte, then
-        //Serial.write(c);                    // print it out the serial monitor
         if (c == '\n') {                    // if the byte is a newline character
-
           // if the current line is blank, you got two newline characters in a row.
           // that's the end of the client HTTP request, so send a response:
           if (currentLine.length() == 0) {
-            sendResponse(client);
-            // break out of the while loop:
-            break;
-          } else {    // if you got a newline, then clear currentLine:
+            if (command != "") {
+                bool found = handleCommand(command);
+                if (found) {
+                  sendRedirectToHomeResponse(client);
+                }
+                else {
+                  sendNotFoundResponse(client);
+                }
+            }
+            else {
+              sendHomeResponse(client);
+            }
+            break; // break out of the while loop:
+          }
+          else {    // if you got a newline, then clear currentLine:
             if (currentLine.startsWith("GET")) {
-              handleCommand(currentLine.substring(5, currentLine.indexOf(' ', 5)));
+              Serial.println(currentLine);
+              // Substring from initial slash until subsequent space, e.g.
+              //   GET /MSG?Hello HTTP/1.1 -> MSG?Hello
+              command = currentLine.substring(5, currentLine.indexOf(' ', 5));
             }
             currentLine = "";
           }
@@ -172,10 +187,9 @@ void handleWebRequest(WiFiClient client) {
     }
     // close the connection:
     client.stop();
-    Serial.println("client disonnected");
 }
 
-void sendResponse(WiFiClient client) {
+void sendHomeResponse(WiFiClient client) {
   // HTTP headers always start with a response code (e.g. HTTP/1.1 200 OK)
   // and a content-type so the client knows what's coming, then a blank line:
   client.println("HTTP/1.1 200 OK");
@@ -188,13 +202,29 @@ void sendResponse(WiFiClient client) {
   client.print("<p>");
   client.print("Toggle <a href=\"/B\">backlight</a><br>");
   client.print("<p>");
+  client.print("Toggle <a href=\"/O\">garage opener</a><br>");
+  client.print("<p>");
   client.print("Send <a href=\"/MSG?Hello\">a message</a><br>");
 
   // The HTTP response ends with another blank line:
   client.println();
 }
 
-void handleCommand(String cmd) {
+void sendRedirectToHomeResponse(WiFiClient client) {
+  client.println("HTTP/1.1 302 Found");
+  client.println("Location: /");
+  client.println();
+  client.println();
+}
+
+void sendNotFoundResponse(WiFiClient client) {
+  client.println("HTTP/1.1 404 Not Found");
+  client.println();
+  client.println("Not found");
+  client.println();
+}
+
+bool handleCommand(String cmd) {
   Serial.print("Got command: ");
   Serial.println(cmd);
 
@@ -210,6 +240,10 @@ void handleCommand(String cmd) {
     led.blink(1);
     lcd.toggleBacklight();
   }
+  else if (cmd.equalsIgnoreCase("O")) {
+    led.blink(1);
+    activateOpener();
+  }
   else if (cmd.startsWith("MSG?")) {
     cmd.replace("%20", " ");
     cmd.substring(4).toCharArray(buf, 20);
@@ -218,6 +252,10 @@ void handleCommand(String cmd) {
     led.blink(1);
     // sendPush("Garage Door", buf);
   }
+  else {
+    return false;
+  }
+  return true;
 }
 
 void sendPush(String title, String message) {
@@ -240,4 +278,10 @@ void sendPush(String title, String message) {
   // input.expire = "";
   // input.answer = "";
   pusher.sendEvent(input);
+}
+
+void activateOpener() {
+    digitalWrite(OPENER_PIN, HIGH);
+    delay(50);
+    digitalWrite(OPENER_PIN, LOW);
 }
