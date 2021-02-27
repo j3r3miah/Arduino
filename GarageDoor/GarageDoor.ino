@@ -14,8 +14,9 @@ char password[] = SECRET_PASS;
 char apiKey[] = SECRET_API_KEY;
 
 #define BUTTON_PIN 2
+#define SWITCH_PIN 4
 #define OPENER_PIN 8
-#define LED_PIN 13
+#define LED_PIN 9
 
 int wifiStatus = WL_IDLE_STATUS;
 WiFiServer server(80);
@@ -25,9 +26,10 @@ Pushsafer pusher(apiKey, pushClient);
 
 Led led(LED_PIN);
 Bounce button;
+Bounce reedSwitch;
 Lcd lcd;
 
-char buf[20] = {0};
+char buf[80] = {0};
 
 void setup() {
   Serial.begin(9600);
@@ -38,10 +40,13 @@ void setup() {
   button.attach(BUTTON_PIN, INPUT_PULLDOWN);
   button.interval(25);
 
+  reedSwitch.attach(SWITCH_PIN, INPUT_PULLUP);
+  reedSwitch.interval(25);
+
   pinMode(OPENER_PIN, OUTPUT);
 
   lcd.init();
-  // lcd.sleepAfter(10000);
+  lcd.sleepAfter(1000 * 60 * 3);
   lcd.print(0, "Hello world!");
   lcd.backlight(true);
 
@@ -55,8 +60,18 @@ void loop() {
   button.update();
   if (button.fell()) {
       led.blink(1);
-      // lcd.toggleBacklight();
-      WiFi.end();
+      lcd.toggleBacklight();
+  }
+
+  reedSwitch.update();
+  if (reedSwitch.fell()) {
+      Serial.println("reedSwitch fell");
+      sendPush("Garage Door", "Door has closed");
+      lcd.backlight(true);
+  } else if (reedSwitch.rose()) {
+      Serial.println("reedSwitch rose");
+      sendPush("Garage Door", "Door has opened");
+      lcd.backlight(true);
   }
 
   updateWifi();
@@ -197,15 +212,18 @@ void sendHomeResponse(WiFiClient client) {
   client.println();
 
   // the content of the HTTP response follows the header:
-  client.print("Turn <a href=\"/H\">LED on</a><br>");
-  client.print("Turn <a href=\"/L\">LED off</a><br>");
+  client.print("<h2>");
+  sprintf(buf, "Garage is %s<br>", digitalRead(SWITCH_PIN) == LOW ? "CLOSED" : "OPEN");
+  client.print(buf);
   client.print("<p>");
-  client.print("Toggle <a href=\"/B\">backlight</a><br>");
+  client.print("Toggle <a href=\"/O\">Garage Opener</a><br>");
   client.print("<p>");
-  client.print("Toggle <a href=\"/O\">garage opener</a><br>");
+  client.print("Toggle <a href=\"/B\">Backlight</a><br>");
   client.print("<p>");
-  client.print("Send <a href=\"/MSG?Hello\">a message</a><br>");
+  sprintf(buf, "Network: %s (%ld dBm)<br>", WiFi.SSID(), WiFi.RSSI());
+  client.print(buf);
 
+  client.print("</h2>");
   // The HTTP response ends with another blank line:
   client.println();
 }
@@ -250,7 +268,6 @@ bool handleCommand(String cmd) {
     lcd.print(3, buf);
     lcd.backlight(true);
     led.blink(1);
-    // sendPush("Garage Door", buf);
   }
   else {
     return false;
