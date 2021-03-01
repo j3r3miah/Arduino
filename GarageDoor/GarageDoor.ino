@@ -9,6 +9,9 @@
 #include <Bounce2.h>
 #include <Pushsafer.h>
 #include <RTClib.h>
+#include <MDNS.h>
+#include <WiFiUdp.h>
+
 
 #include "Lcd.h"
 #include "Led.h"
@@ -26,6 +29,8 @@ char DOW[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frid
 #define LED_PIN 9
 
 int wifiStatus = WL_IDLE_STATUS;
+WiFiUDP udp;
+MDNS mdns(udp);
 WiFiServer server(80);
 
 WiFiClient pushClient;
@@ -83,9 +88,11 @@ void loop() {
   if (reedSwitch.fell()) {
       sendPush("Garage Door", "Door has closed");
       lcd.backlight(true);
+      led.blink(2);
   } else if (reedSwitch.rose()) {
       sendPush("Garage Door", "Door has opened");
       lcd.backlight(true);
+      led.blink(2);
   }
 
   updateTime();
@@ -141,8 +148,17 @@ void updateWifi() {
     lcd.print(1, WiFi.SSID());
 
     if (status == WL_CONNECTED) {
+      // just connected so start webserver, mdns, and update lcd
       server.begin();
-      // print ip address once, upon connection
+      if (!mdns.begin(WiFi.localIP(), "GarageDoor")) {
+        Serial.println("[mdns] Init failed");
+      } else {
+        if (!mdns.addServiceRecord("Garage Door._http", 80, MDNSServiceTCP)) {
+          Serial.println("[mdns] Adding service failed");
+        } else {
+          Serial.println("[mdns] OK");
+        }
+      }
       WiFi.localIP().printTo(*(lcd.getPrinter(0, 2)));
       led.blink(2);
     }
@@ -150,6 +166,7 @@ void updateWifi() {
              || status == WL_CONNECTION_LOST
              || status == WL_DISCONNECTED
              || status == WL_IDLE_STATUS) {
+      // just disconnected, clear lcd and try to reconnect
       lcd.clear(1); // clear ssid
       lcd.clear(2); // clear ip
       wifiStatus = WiFi.begin(ssid, password);
@@ -315,9 +332,7 @@ void sendPush(String title, String message) {
   input.device = "a"; // all devices
   input.title = title;
   input.message = message;
-  // TODO add url to portal
-  // input.url = "https://www.pushsafer.com";
-  // input.urlTitle = "Open Pushsafer.com";
+  input.url = "https://garagedoor.local";
   pusher.sendEvent(input);
   // TODO check for success
 #endif
