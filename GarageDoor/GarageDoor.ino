@@ -8,6 +8,7 @@
 #include <Print.h>
 #include <Bounce2.h>
 #include <Pushsafer.h>
+#include <RTClib.h>
 
 #include "Lcd.h"
 #include "Led.h"
@@ -16,6 +17,8 @@
 char ssid[] = SECRET_SSID;
 char password[] = SECRET_PASS;
 char apiKey[] = SECRET_API_KEY;
+
+char DOW[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
 
 #define BUTTON_PIN 2
 #define REED_SWITCH_PIN 4
@@ -31,6 +34,7 @@ Pushsafer pusher(apiKey, pushClient);
 Led led(LED_PIN);
 Bounce button;
 Bounce reedSwitch;
+RTC_DS3231 rtc;
 Lcd lcd;
 
 char buf[80] = {0};
@@ -51,8 +55,16 @@ void setup() {
 
   lcd.init();
   lcd.sleepAfter(1000 * 60 * 3);
-  lcd.print(0, "Hello world!");
   lcd.backlight(true);
+
+  if (!rtc.begin()) {
+    Serial.println("Communication with RTC module failed");
+    while (true);
+  }
+  if (rtc.lostPower()) {
+    Serial.println("RTC lost power; setting time");
+    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  }
 
   initWifi();
 }
@@ -76,6 +88,7 @@ void loop() {
       lcd.backlight(true);
   }
 
+  updateTime();
   updateWifi();
 
   if (wifiStatus == WL_CONNECTED) {
@@ -86,9 +99,23 @@ void loop() {
   }
 }
 
+void updateTime() {
+  // update clock every second or so
+  // TODO this is lame... keep track of last update
+  if (millis() % 1000 < 5) {
+    DateTime now = rtc.now();
+    sprintf(buf, "%s %02d:%02d:%02d",
+            DOW[now.dayOfTheWeek()],
+            now.hour(),
+            now.minute(),
+            now.second());
+    lcd.print(3, buf);
+  }
+}
+
 void initWifi() {
   if (WiFi.status() == WL_NO_MODULE) {
-    Serial.println("Communication with WiFi module failed!");
+    Serial.println("Communication with WiFi module failed");
     while (true);
   }
 
@@ -99,8 +126,6 @@ void initWifi() {
 
   Serial.print("Attempting to connect to Network named: ");
   Serial.println(ssid);
-  lcd.print(0, ssid);
-  // lcd.print(1, "Connecting...");
 
   WiFi.setTimeout(0); // do not block!
   wifiStatus = WiFi.begin(ssid, password);
@@ -112,7 +137,8 @@ void updateWifi() {
   if (status != wifiStatus) {
     wifiStatus = status;
     printWifiStatus(wifiStatus);
-    lcd.print(1, statusString(wifiStatus));
+    lcd.print(0, statusString(wifiStatus));
+    lcd.print(1, WiFi.SSID());
 
     if (status == WL_CONNECTED) {
       server.begin();
@@ -124,8 +150,8 @@ void updateWifi() {
              || status == WL_CONNECTION_LOST
              || status == WL_DISCONNECTED
              || status == WL_IDLE_STATUS) {
+      lcd.clear(1); // clear ssid
       lcd.clear(2); // clear ip
-      lcd.clear(3); // clear rssi
       wifiStatus = WiFi.begin(ssid, password);
     }
   }
@@ -134,7 +160,7 @@ void updateWifi() {
     // print signal strength every second or so
     if (millis() % 1000 < 5) {
       sprintf(buf, "%ld dBm", WiFi.RSSI());
-      lcd.print(3, buf);
+      lcd.print(0, 10, buf);
     }
   }
 }
@@ -220,7 +246,14 @@ void sendHomeResponse(WiFiClient client) {
   client.print("<p>");
   client.print("Toggle <a href=\"/B\">Backlight</a><br>");
   client.print("<p>");
-  sprintf(buf, "Network: %s (%ld dBm)<br>", WiFi.SSID(), WiFi.RSSI());
+  sprintf(buf, "%s (%ld dBm)<br>", WiFi.SSID(), WiFi.RSSI());
+  client.print(buf);
+  client.print("<p>");
+  DateTime now = rtc.now();
+  sprintf(buf, "%s %d/%d/%d %02d:%02d:%02d",
+          DOW[now.dayOfTheWeek()],
+          now.month(), now.day(), now.year(),
+          now.hour(), now.minute(), now.second());
   client.print(buf);
   client.print("</h2>");
   client.println();

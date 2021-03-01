@@ -33,6 +33,12 @@ public:
     lcd.print(msg);
   }
 
+  void print(int row, int col, String msg) {
+    // clear(row);
+    lcd.setCursor(col, row);
+    lcd.print(msg);
+  }
+
   void clear(int row) {
     lcd.setCursor(0, row);
     lcd.print("                    ");
