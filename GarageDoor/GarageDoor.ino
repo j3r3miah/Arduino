@@ -1,3 +1,7 @@
+// disable opener and push notifications during dev
+// #define NO_PUSH 1
+// #define NO_OPENER 1
+
 #include <SPI.h>
 #include <WiFiNINA.h>
 #include <Wire.h>
@@ -14,7 +18,7 @@ char password[] = SECRET_PASS;
 char apiKey[] = SECRET_API_KEY;
 
 #define BUTTON_PIN 2
-#define SWITCH_PIN 4
+#define REED_SWITCH_PIN 4
 #define OPENER_PIN 8
 #define LED_PIN 9
 
@@ -40,7 +44,7 @@ void setup() {
   button.attach(BUTTON_PIN, INPUT_PULLDOWN);
   button.interval(25);
 
-  reedSwitch.attach(SWITCH_PIN, INPUT_PULLUP);
+  reedSwitch.attach(REED_SWITCH_PIN, INPUT_PULLUP);
   reedSwitch.interval(25);
 
   pinMode(OPENER_PIN, OUTPUT);
@@ -65,11 +69,9 @@ void loop() {
 
   reedSwitch.update();
   if (reedSwitch.fell()) {
-      Serial.println("reedSwitch fell");
       sendPush("Garage Door", "Door has closed");
       lcd.backlight(true);
   } else if (reedSwitch.rose()) {
-      Serial.println("reedSwitch rose");
       sendPush("Garage Door", "Door has opened");
       lcd.backlight(true);
   }
@@ -205,15 +207,13 @@ void handleWebRequest(WiFiClient client) {
 }
 
 void sendHomeResponse(WiFiClient client) {
-  // HTTP headers always start with a response code (e.g. HTTP/1.1 200 OK)
-  // and a content-type so the client knows what's coming, then a blank line:
   client.println("HTTP/1.1 200 OK");
   client.println("Content-type:text/html");
   client.println();
-
-  // the content of the HTTP response follows the header:
+  client.println("<head><meta http-equiv=\"refresh\" content=\"5\"></head>");
   client.print("<h2>");
-  sprintf(buf, "Garage is %s<br>", digitalRead(SWITCH_PIN) == LOW ? "CLOSED" : "OPEN");
+  char* doorState = digitalRead(REED_SWITCH_PIN) == LOW ? "CLOSED" : "OPEN";
+  sprintf(buf, "Garage is %s<br>", doorState);
   client.print(buf);
   client.print("<p>");
   client.print("Toggle <a href=\"/O\">Garage Opener</a><br>");
@@ -222,9 +222,7 @@ void sendHomeResponse(WiFiClient client) {
   client.print("<p>");
   sprintf(buf, "Network: %s (%ld dBm)<br>", WiFi.SSID(), WiFi.RSSI());
   client.print(buf);
-
   client.print("</h2>");
-  // The HTTP response ends with another blank line:
   client.println();
 }
 
@@ -276,29 +274,28 @@ bool handleCommand(String cmd) {
 }
 
 void sendPush(String title, String message) {
+#ifdef NO_PUSH
+  Serial.print("Send push: ");
+  Serial.println(message);
+#else
   struct PushSaferInput input;
+  input.device = "a"; // all devices
   input.title = title;
   input.message = message;
-  // input.sound = "8";
-  // input.vibration = "1";
-  // input.icon = "1";
-  // input.iconcolor = "#FFCCCC";
-  // input.priority = "1";
-  input.device = "a"; // all devices
+  // TODO add url to portal
   // input.url = "https://www.pushsafer.com";
   // input.urlTitle = "Open Pushsafer.com";
-  // input.picture = "";
-  // input.picture2 = "";
-  // input.picture3 = "";
-  // input.time2live = "";
-  // input.retry = "";
-  // input.expire = "";
-  // input.answer = "";
   pusher.sendEvent(input);
+  // TODO check for success
+#endif
 }
 
 void activateOpener() {
+#ifdef NO_OPENER
+  Serial.println("Toggle garage openeer");
+#else
     digitalWrite(OPENER_PIN, HIGH);
     delay(50);
     digitalWrite(OPENER_PIN, LOW);
+#endif
 }
