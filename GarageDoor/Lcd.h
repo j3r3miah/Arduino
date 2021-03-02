@@ -7,6 +7,7 @@ private:
   unsigned long sleepAfterMillis = 0;
   unsigned long activatedMillis = 0;
   bool backlightEnabled = false;
+  char buf[80] = {0};
 
 public:
   Lcd() : lcd(LiquidCrystal_I2C(0x27, 20, 4)) { }
@@ -28,13 +29,12 @@ public:
   }
 
   void print(int row, String msg) {
-    clear(row);
+    sprintf(buf, "%-20s", msg.c_str());
     lcd.setCursor(0, row);
-    lcd.print(msg);
+    lcd.print(buf);
   }
 
   void print(int row, int col, String msg) {
-    // clear(row);
     lcd.setCursor(col, row);
     lcd.print(msg);
   }

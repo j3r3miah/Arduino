@@ -11,7 +11,7 @@
 #include <RTClib.h>
 #include <MDNS.h>
 #include <WiFiUdp.h>
-
+#include <TimerEvent.h>
 
 #include "Lcd.h"
 #include "Led.h"
@@ -44,6 +44,8 @@ Lcd lcd;
 
 char buf[80] = {0};
 
+TimerEvent timer;
+
 void setup() {
   Serial.begin(9600);
 
@@ -71,12 +73,17 @@ void setup() {
     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
   }
 
+  timer.set(1000, updateDisplay);
+  updateDisplay();
+
   initWifi();
 }
 
 void loop() {
+  timer.update();
   led.update();
   lcd.update();
+  updateWifi();
 
   button.update();
   if (button.fell()) {
@@ -95,28 +102,11 @@ void loop() {
       led.blink(2);
   }
 
-  updateTime();
-  updateWifi();
-
   if (wifiStatus == WL_CONNECTED) {
     WiFiClient client = server.available();
     if (client) {
       handleWebRequest(client);
     }
-  }
-}
-
-void updateTime() {
-  // update clock every second or so
-  // TODO this is lame... keep track of last update
-  if (millis() % 1000 < 5) {
-    DateTime now = rtc.now();
-    sprintf(buf, "%s %02d:%02d:%02d",
-            DOW[now.dayOfTheWeek()],
-            now.hour(),
-            now.minute(),
-            now.second());
-    lcd.print(3, buf);
   }
 }
 
@@ -172,13 +162,21 @@ void updateWifi() {
       wifiStatus = WiFi.begin(ssid, password);
     }
   }
+}
 
-  if (wifiStatus == WL_CONNECTED) {
-    // print signal strength every second or so
-    if (millis() % 1000 < 5) {
-      sprintf(buf, "%ld dBm", WiFi.RSSI());
-      lcd.print(0, 10, buf);
-    }
+void updateDisplay() {
+  DateTime now = rtc.now();
+  sprintf(buf, "%s %02d:%02d:%02d",
+          DOW[now.dayOfTheWeek()],
+          now.hour(),
+          now.minute(),
+          now.second());
+  lcd.print(3, buf);
+
+  if (WiFi.status() == WL_CONNECTED) {
+    // print signal strength after status
+    sprintf(buf, "%ld dBm", WiFi.RSSI());
+    lcd.print(0, 13, buf);
   }
 }
 
