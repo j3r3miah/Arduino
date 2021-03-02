@@ -1,6 +1,6 @@
 // disable opener and push notifications during dev
-// #define NO_PUSH 1
-// #define NO_OPENER 1
+#define NO_PUSH 1
+#define NO_OPENER 1
 
 #include <SPI.h>
 #include <WiFiNINA.h>
@@ -13,6 +13,7 @@
 #include <WiFiUdp.h>
 #include <TimerEvent.h>
 
+#include "Logger.h"
 #include "Lcd.h"
 #include "Led.h"
 
@@ -32,22 +33,20 @@ int wifiStatus = WL_IDLE_STATUS;
 WiFiUDP udp;
 MDNS mdns(udp);
 WiFiServer server(80);
-
 WiFiClient pushClient;
 Pushsafer pusher(apiKey, pushClient);
-
 Led led(LED_PIN);
 Bounce button;
 Bounce reedSwitch;
 RTC_DS3231 rtc;
-Lcd lcd;
-
-char buf[80] = {0};
-
+Logger logger(rtc);
 TimerEvent timer;
+Lcd lcd;
+char buf[80] = {0};
 
 void setup() {
   Serial.begin(9600);
+  logger.log(EventType::BOOTED);
 
   led.init();
   led.blink(5);
@@ -76,10 +75,16 @@ void setup() {
   timer.set(1000, updateDisplay);
   updateDisplay();
 
+  EEPROM.write(0, 123);
+  byte val = EEPROM.read(0);
+  Serial.print("Read ");
+  Serial.println(val, DEC);
+
   initWifi();
 }
 
 void loop() {
+  logger.update();
   timer.update();
   led.update();
   lcd.update();
@@ -87,19 +92,22 @@ void loop() {
 
   button.update();
   if (button.fell()) {
-      led.blink(1);
-      lcd.toggleBacklight();
+    led.blink(1);
+    lcd.toggleBacklight();
+    logger.printLogs();
   }
 
   reedSwitch.update();
   if (reedSwitch.fell()) {
-      sendPush("Garage Door", "Door has closed");
-      lcd.backlight(true);
-      led.blink(2);
+    logger.log(EventType::DOOR_CLOSED);
+    sendPush("Garage Door", "Door has closed");
+    lcd.backlight(true);
+    led.blink(2);
   } else if (reedSwitch.rose()) {
-      sendPush("Garage Door", "Door has opened");
-      lcd.backlight(true);
-      led.blink(2);
+    logger.log(EventType::DOOR_OPENED);
+    sendPush("Garage Door", "Door has opened");
+    lcd.backlight(true);
+    led.blink(2);
   }
 
   if (wifiStatus == WL_CONNECTED) {
@@ -139,6 +147,7 @@ void updateWifi() {
 
     if (status == WL_CONNECTED) {
       // just connected so start webserver, mdns, and update lcd
+      logger.log(EventType::CONNECTED);
       server.begin();
       if (!mdns.begin(WiFi.localIP(), "GarageDoor")) {
         Serial.println("[mdns] Init failed");
@@ -157,6 +166,7 @@ void updateWifi() {
              || status == WL_DISCONNECTED
              || status == WL_IDLE_STATUS) {
       // just disconnected, clear lcd and try to reconnect
+      logger.log(EventType::DISCONNECTED);
       lcd.clear(1); // clear ssid
       lcd.clear(2); // clear ip
       wifiStatus = WiFi.begin(ssid, password);
@@ -166,6 +176,11 @@ void updateWifi() {
 
 void updateDisplay() {
   DateTime now = rtc.now();
+
+  // TODO why doesn't this work?
+  const char* fmt = "DDD hh:mm:ss";
+  lcd.print(3, now.toString(fmt));
+
   sprintf(buf, "%s %02d:%02d:%02d",
           DOW[now.dayOfTheWeek()],
           now.hour(),
