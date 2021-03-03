@@ -14,7 +14,7 @@ byte backslash[8] = {
   0b00000
 };
 
-byte pipe[8] = {
+byte bar[8] = {
   0b00000,
   0b00100,
   0b00100,
@@ -29,7 +29,7 @@ byte pipe[8] = {
 void setup()
 {
   lcd.init();
-  lcd.createChar(0, pipe);
+  lcd.createChar(0, bar);
   lcd.createChar(3, backslash);
   lcd.backlight();
   lcd.setCursor(4, 1);
