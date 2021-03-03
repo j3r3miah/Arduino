@@ -8,7 +8,7 @@
 #include <Print.h>
 #include <Bounce2.h>
 #include <Pushsafer.h>
-#include <RTClib.h>
+// #include <RTClib.h>
 #include <MDNS.h>
 #include <WiFiUdp.h>
 #include <TimerEvent.h>
@@ -39,7 +39,7 @@ Pushsafer pusher(apiKey, pushClient);
 Led led(LED_PIN);
 Bounce button;
 Bounce reedSwitch;
-RTC_DS3231 rtc;
+// RTC_DS3231 rtc;
 Lcd lcd;
 
 char buf[80] = {0};
@@ -64,14 +64,14 @@ void setup() {
   lcd.sleepAfter(1000 * 60 * 3);
   lcd.backlight(true);
 
-  if (!rtc.begin()) {
-    Serial.println("Communication with RTC module failed");
-    while (true);
-  }
-  if (rtc.lostPower()) {
-    Serial.println("RTC lost power; setting time");
-    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-  }
+  // if (!rtc.begin()) {
+  //   Serial.println("Communication with RTC module failed");
+  //   while (true);
+  // }
+  // if (rtc.lostPower()) {
+  //   Serial.println("RTC lost power; setting time");
+  //   rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  // }
 
   timer.set(1000, updateDisplay);
   updateDisplay();
@@ -165,13 +165,13 @@ void updateWifi() {
 }
 
 void updateDisplay() {
-  DateTime now = rtc.now();
-  sprintf(buf, "%s %02d:%02d:%02d",
-          DOW[now.dayOfTheWeek()],
-          now.hour(),
-          now.minute(),
-          now.second());
-  lcd.print(3, buf);
+  // DateTime now = rtc.now();
+  // sprintf(buf, "%s %02d:%02d:%02d",
+  //         DOW[now.dayOfTheWeek()],
+  //         now.hour(),
+  //         now.minute(),
+  //         now.second());
+  // lcd.print(3, buf);
 
   if (WiFi.status() == WL_CONNECTED) {
     // print signal strength after status
@@ -263,13 +263,13 @@ void sendHomeResponse(WiFiClient client) {
   client.print("<p>");
   sprintf(buf, "%s (%ld dBm)<br>", WiFi.SSID(), WiFi.RSSI());
   client.print(buf);
-  client.print("<p>");
-  DateTime now = rtc.now();
-  sprintf(buf, "%s %d/%d/%d %02d:%02d:%02d",
-          DOW[now.dayOfTheWeek()],
-          now.month(), now.day(), now.year(),
-          now.hour(), now.minute(), now.second());
-  client.print(buf);
+  // client.print("<p>");
+  // DateTime now = rtc.now();
+  // sprintf(buf, "%s %d/%d/%d %02d:%02d:%02d",
+  //         DOW[now.dayOfTheWeek()],
+  //         now.month(), now.day(), now.year(),
+  //         now.hour(), now.minute(), now.second());
+  // client.print(buf);
   client.print("</h2>");
   client.println();
 }
@@ -338,7 +338,7 @@ void sendPush(String title, String message) {
 
 void activateOpener() {
 #ifdef NO_OPENER
-  Serial.println("Toggle garage openeer");
+  Serial.println("Toggle garage opener");
 #else
     digitalWrite(OPENER_PIN, HIGH);
     delay(50);
