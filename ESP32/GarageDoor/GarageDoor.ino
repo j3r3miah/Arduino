@@ -1,10 +1,15 @@
-#include <WiFi.h>
-#include <TimerEvent.h>
+#include <Bounce2.h>
 #include <RTClib.h>
+#include <TimerEvent.h>
+#include <WiFi.h>
 
-#include "Utils.h"
 #include "Lcd.h"
+#include "Led.h"
 #include "Secrets.h"
+#include "Utils.h"
+
+#define LED_PIN LED_BUILTIN
+#define REED_SWITCH_PIN 27
 
 char DOW[7][12] = {
   "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"
@@ -15,24 +20,41 @@ char password[] = SECRET_PASS;
 
 Lcd lcd;
 RTC_DS3231 rtc;
+Led led(LED_PIN);
+Bounce reedSwitch;
 
 TimerEvent timer;
 wl_status_t wifiStatus;
-char buf[80];
 
 void setup() {
   Serial.begin(115200);
+  led.init(5);
   setupRTC();
   lcd.init();
   lcd.backlight(true);
   timer.set(1000, updateDisplay);
   updateDisplay();
+  reedSwitch.attach(REED_SWITCH_PIN, INPUT_PULLUP);
+  reedSwitch.interval(25);
   WiFi.begin(ssid, password);
 }
 
 void loop() {
+  led.update();
   lcd.update();
   timer.update();
+  reedSwitch.update();
+
+  if (reedSwitch.fell()) {
+      // sendPush("Garage Door", "Door has closed");
+      lcd.backlight(true);
+      led.blink(2);
+  }
+  else if (reedSwitch.rose()) {
+      // sendPush("Garage Door", "Door has opened");
+      lcd.backlight(true);
+      led.blink(2);
+  }
 }
 
 void setupRTC() {
@@ -46,8 +68,7 @@ void setupRTC() {
   }
 }
 
-// called once per second
-void updateDisplay() {
+void updateDisplay() { // called once per second
   DateTime now = rtc.now();
   lcd.printf(3, "%s %02d:%02d:%02d",
              DOW[now.dayOfTheWeek()],
@@ -72,21 +93,6 @@ void updateDisplay() {
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    sprintf(buf, "%ld dBm", WiFi.RSSI());
-    lcd.print(0, 13, buf);
-  }
-}
-
-const char *wifiStatusString(wl_status_t status) {
-  switch (status) {
-    case WL_NO_SHIELD: return "No shield";
-    case WL_IDLE_STATUS: return "Idle";
-    case WL_NO_SSID_AVAIL: return "Searching...";
-    case WL_SCAN_COMPLETED: return "Scan Completed";
-    case WL_CONNECTED: return "Connected";
-    case WL_CONNECT_FAILED: return "Connect Failed";
-    case WL_CONNECTION_LOST: return "Connection Lost";
-    case WL_DISCONNECTED: return "Disconnected";
-    default: return "Unknown Error";
+    lcd.printf(0, 13, "%ld dBm", WiFi.RSSI());
   }
 }
