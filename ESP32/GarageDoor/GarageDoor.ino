@@ -28,6 +28,8 @@ Bounce reedSwitch;
 TimerEvent timer;
 wl_status_t wifiStatus;
 AsyncWebServer server(80);
+bool timerFired = true;
+DateTime now;
 
 void setup() {
   Serial.begin(115200);
@@ -37,8 +39,7 @@ void setup() {
   lcd.init();
   lcd.sleepAfter(1000 * 60 * 3);
   lcd.backlight(true);
-  timer.set(1000, updateDisplay);
-  updateDisplay();
+  timer.set(1000, []() { timerFired = true; });
 
   reedSwitch.attach(REED_SWITCH_PIN, INPUT_PULLUP);
   reedSwitch.interval(25);
@@ -52,6 +53,7 @@ void loop() {
   lcd.update();
   timer.update();
   reedSwitch.update();
+  now = rtc.now();
 
   if (reedSwitch.fell()) {
       // sendPush("Garage Door", "Door has closed");
@@ -62,6 +64,11 @@ void loop() {
       // sendPush("Garage Door", "Door has opened");
       lcd.backlight(true);
       led.blink(2);
+  }
+
+  if (timerFired) {
+    updateDisplay();
+    timerFired = false;
   }
 }
 
@@ -135,20 +142,15 @@ String templateVar(const String& var){
     return String(WiFi.RSSI());
   }
   else if (var == "timestamp") {
-    return String(rtc.now().unixtime());
+    return String(now.unixtime());
   }
   else if (var == "now") {
-    char buf[20];
-    DateTime now = rtc.now();
-    snprintf(buf, sizeof(buf), "%s %02d:%02d:%02d",
-             DOW[now.dayOfTheWeek()], now.hour(), now.minute(), now.second());
-    return String(buf);
+    return now.timestamp();
   }
   return "";
 }
 
 void updateDisplay() { // called once per second
-  DateTime now = rtc.now();
   lcd.printf(3, "%s %02d:%02d:%02d",
              DOW[now.dayOfTheWeek()],
              now.hour(), now.minute(), now.second());
@@ -171,7 +173,7 @@ void updateDisplay() { // called once per second
     wifiStatus = status;
   }
 
-  if (WiFi.status() == WL_CONNECTED) {
+  if (status == WL_CONNECTED) {
     lcd.printf(0, 13, "%ld dBm", WiFi.RSSI());
   }
 }
