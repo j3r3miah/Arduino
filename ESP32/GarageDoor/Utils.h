@@ -1,3 +1,6 @@
+#ifndef UTIL_H
+#define UTIL_H
+
 #include <stdarg.h>
 
 char __utils_buf[128];
@@ -31,3 +34,5 @@ const char *wifiStatusString(wl_status_t status) {
     default: return "Unknown Error";
   }
 }
+
+#endif

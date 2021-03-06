@@ -6,6 +6,7 @@
 
 #include "Lcd.h"
 #include "Led.h"
+#include "EventLog.h"
 #include "Secrets.h"
 #include "Utils.h"
 
@@ -29,13 +30,15 @@ Lcd lcd;
 RTC_DS3231 rtc;
 Led led(LED_PIN);
 Bounce reedSwitch;
-
 AsyncWebServer server(80);
+EventLog logger;
 DateTime now;
 
 void setup() {
   Serial.begin(115200);
   setupClock();
+  now = rtc.now();
+  logger.write(now.unixtime(), EventType::BOOTED);
 
   led.init(5);
   lcd.init();
@@ -57,15 +60,28 @@ void loop() {
   updateDisplay();
 
   if (reedSwitch.fell()) {
+      logger.write(now.unixtime(), EventType::DOOR_CLOSED);
       // sendPush("Garage Door", "Door has closed");
       lcd.backlight(true);
       led.blink(2);
   }
   else if (reedSwitch.rose()) {
+      logger.write(now.unixtime(), EventType::DOOR_OPENED);
       // sendPush("Garage Door", "Door has opened");
       lcd.backlight(true);
       led.blink(2);
   }
+
+  // static uint32_t lastLog;
+  // if (millis() - lastLog >= 10000) {
+  //   lastLog = millis();
+  //   println("--- Log ---");
+  //   logger.doEach([](uint32_t timestamp, EventType event) {
+  //     println("%s :: %s",
+  //             DateTime(timestamp).timestamp().c_str(),
+  //             EventLog::toString(event));
+  //   });
+  // }
 }
 
 void setupClock() {
@@ -80,7 +96,7 @@ void setupClock() {
 }
 
 void updateClock() {
-  static unsigned long lastTick;
+  static uint32_t lastTick;
   if (millis() - lastTick >= 1000) {
     lastTick = millis();
     now = rtc.now();
@@ -89,20 +105,22 @@ void updateClock() {
 
 void updateDisplay() {
   static wl_status_t lastStatus = WL_DISCONNECTED;
-  static unsigned long lastClock;
-  static unsigned long lastRssi;
+  static uint32_t lastClock;
+  static uint32_t lastRssi;
 
   if (WiFi.status() != lastStatus) {
     lastStatus = WiFi.status();
     lcd.print(0, wifiStatusString(lastStatus));
     lcd.print(1, WiFi.SSID());
     if (lastStatus == WL_CONNECTED) {
+      logger.write(now.unixtime(), EventType::CONNECTED);
       println("Connected to %s: %s",
               WiFi.SSID().c_str(),
               WiFi.localIP().toString().c_str());
       lcd.print(2, WiFi.localIP().toString());
     }
     else {
+      logger.write(now.unixtime(), EventType::DISCONNECTED);
       println("WiFi status: %s", wifiStatusString(lastStatus));
       lcd.clear(1); // clear ssid
       lcd.clear(2); // clear ip
