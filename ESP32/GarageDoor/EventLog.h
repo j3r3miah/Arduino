@@ -2,7 +2,7 @@
 #include <RTClib.h>
 #include "Utils.h"
 
-#define LOG_SIZE 4
+#define LOG_SIZE 256
 
 enum EventType {
   BOOTED,
@@ -30,21 +30,8 @@ public:
     if (tail == -1)
       tail = 0;
 
-    // println("head=%d, tail=%d", head, tail);
     logs[head].timestamp = timestamp;
     logs[head].event = event;
-    // print();
-  }
-
-  void print() {
-    println("--- Log ---");
-    int p = tail;
-    while (true) {
-      DateTime dt(logs[p].timestamp);
-      println("%s :: %s", dt.timestamp().c_str(), toString(logs[p].event));
-      if (p == head) break;
-      increment(p);
-    }
   }
 
   void doEach(const std::function<void (uint32_t, EventType)>& f) {
@@ -56,14 +43,22 @@ public:
     }
   }
 
+  const Record last() const {
+    return logs[head];
+  }
+
+  bool empty() const {
+    return head == -1;
+  }
+
   static const char* toString(EventType event) {
     switch (event) {
-      case BOOTED: return "System booted";
-      case CONNECTED: return "WiFi connected";
-      case DISCONNECTED: return "WiFi disconnected";
-      case DOOR_OPENED: return "Door opened";
-      case DOOR_CLOSED: return "Door closed";
-      default: return "Unknown event";
+      case BOOTED: return "Booted";
+      case CONNECTED: return "Connected";
+      case DISCONNECTED: return "Disconnected";
+      case DOOR_OPENED: return "Opened";
+      case DOOR_CLOSED: return "Closed";
+      default: return "Unknown";
     }
   }
 

@@ -71,17 +71,6 @@ void loop() {
       lcd.backlight(true);
       led.blink(2);
   }
-
-  // static uint32_t lastLog;
-  // if (millis() - lastLog >= 10000) {
-  //   lastLog = millis();
-  //   println("--- Log ---");
-  //   logger.doEach([](uint32_t timestamp, EventType event) {
-  //     println("%s :: %s",
-  //             DateTime(timestamp).timestamp().c_str(),
-  //             EventLog::toString(event));
-  //   });
-  // }
 }
 
 void setupClock() {
@@ -111,19 +100,17 @@ void updateDisplay() {
   if (WiFi.status() != lastStatus) {
     lastStatus = WiFi.status();
     lcd.print(0, wifiStatusString(lastStatus));
-    lcd.print(1, WiFi.SSID());
     if (lastStatus == WL_CONNECTED) {
       logger.write(now.unixtime(), EventType::CONNECTED);
       println("Connected to %s: %s",
               WiFi.SSID().c_str(),
               WiFi.localIP().toString().c_str());
-      lcd.print(2, WiFi.localIP().toString());
+      lcd.print(1, WiFi.localIP().toString());
     }
     else {
       logger.write(now.unixtime(), EventType::DISCONNECTED);
       println("WiFi status: %s", wifiStatusString(lastStatus));
-      lcd.clear(1); // clear ssid
-      lcd.clear(2); // clear ip
+      lcd.clear(1); // clear ip
     }
   }
 
@@ -137,6 +124,14 @@ void updateDisplay() {
     lcd.printf(3, "%s %02d:%02d:%02d",
                DOW[now.dayOfTheWeek()],
                now.hour(), now.minute(), now.second());
+
+    if (!logger.empty()) {
+      Record r = logger.last();
+      DateTime dt(r.timestamp);
+      lcd.printf(2, "%s @ %02d:%02d",
+                 EventLog::toString(r.event),
+                 dt.hour(), dt.minute());
+    }
   }
 }
 
@@ -153,6 +148,10 @@ void setupServer() {
       %ssid% (%rssi% dBm)<br>
       <p>
       %now%
+      <h2>
+      <pre>
+%eventlog%
+      </pre>
   )";
 
   server.on("/", HTTP_GET, [index_html](AsyncWebServerRequest *request) {
@@ -203,6 +202,16 @@ String templateVar(const String& var){
   }
   else if (var == "now") {
     return now.timestamp();
+  }
+  else if (var == "eventlog") {
+    String s = "";
+    logger.doEach([&](uint32_t timestamp, EventType event) {
+      s.concat(DateTime(timestamp).timestamp());
+      s.concat(" :: ");
+      s.concat(EventLog::toString(event));
+      s.concat("\n");
+    });
+    return s;
   }
   return "";
 }
