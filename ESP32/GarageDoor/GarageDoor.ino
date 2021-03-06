@@ -1,9 +1,8 @@
-#include <AsyncTCP.h>
-#include <Bounce2.h>
-#include <ESPAsyncWebServer.h>
-#include <RTClib.h>
-#include <TimerEvent.h>
 #include <WiFi.h>
+#include <RTClib.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+#include <Bounce2.h>
 
 #include "Lcd.h"
 #include "Led.h"
@@ -14,7 +13,13 @@
 #define REED_SWITCH_PIN 27
 
 char DOW[7][12] = {
-  "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday"
 };
 
 char ssid[] = SECRET_SSID;
@@ -25,21 +30,17 @@ RTC_DS3231 rtc;
 Led led(LED_PIN);
 Bounce reedSwitch;
 
-TimerEvent timer;
-wl_status_t wifiStatus;
 AsyncWebServer server(80);
-bool timerFired = true;
 DateTime now;
 
 void setup() {
   Serial.begin(115200);
-  setupRTC();
+  setupClock();
 
   led.init(5);
   lcd.init();
   lcd.sleepAfter(1000 * 60 * 3);
   lcd.backlight(true);
-  timer.set(1000, []() { timerFired = true; });
 
   reedSwitch.attach(REED_SWITCH_PIN, INPUT_PULLUP);
   reedSwitch.interval(25);
@@ -51,9 +52,9 @@ void setup() {
 void loop() {
   led.update();
   lcd.update();
-  timer.update();
   reedSwitch.update();
-  now = rtc.now();
+  updateClock();
+  updateDisplay();
 
   if (reedSwitch.fell()) {
       // sendPush("Garage Door", "Door has closed");
@@ -65,14 +66,9 @@ void loop() {
       lcd.backlight(true);
       led.blink(2);
   }
-
-  if (timerFired) {
-    updateDisplay();
-    timerFired = false;
-  }
 }
 
-void setupRTC() {
+void setupClock() {
   if (!rtc.begin()) {
     println("Communication with RTC module failed");
     while (true);
@@ -80,6 +76,49 @@ void setupRTC() {
   if (rtc.lostPower()) {
     println("RTC lost power; setting time");
     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  }
+}
+
+void updateClock() {
+  static unsigned long lastTick;
+  if (millis() - lastTick >= 1000) {
+    lastTick = millis();
+    now = rtc.now();
+  }
+}
+
+void updateDisplay() {
+  static wl_status_t lastStatus = WL_DISCONNECTED;
+  static unsigned long lastClock;
+  static unsigned long lastRssi;
+
+  if (WiFi.status() != lastStatus) {
+    lastStatus = WiFi.status();
+    lcd.print(0, wifiStatusString(lastStatus));
+    lcd.print(1, WiFi.SSID());
+    if (lastStatus == WL_CONNECTED) {
+      println("Connected to %s: %s",
+              WiFi.SSID().c_str(),
+              WiFi.localIP().toString().c_str());
+      lcd.print(2, WiFi.localIP().toString());
+    }
+    else {
+      println("WiFi status: %s", wifiStatusString(lastStatus));
+      lcd.clear(1); // clear ssid
+      lcd.clear(2); // clear ip
+    }
+  }
+
+  if (lastStatus == WL_CONNECTED && millis() - lastRssi >= 3000) {
+    lastRssi = millis();
+    lcd.printf(0, 13, "%ld dBm", WiFi.RSSI());
+  }
+
+  if (millis() - lastClock >= 1000) {
+    lastClock = millis();
+    lcd.printf(3, "%s %02d:%02d:%02d",
+               DOW[now.dayOfTheWeek()],
+               now.hour(), now.minute(), now.second());
   }
 }
 
@@ -148,32 +187,4 @@ String templateVar(const String& var){
     return now.timestamp();
   }
   return "";
-}
-
-void updateDisplay() { // called once per second
-  lcd.printf(3, "%s %02d:%02d:%02d",
-             DOW[now.dayOfTheWeek()],
-             now.hour(), now.minute(), now.second());
-
-  wl_status_t status = WiFi.status();
-  if (status != wifiStatus) {
-    lcd.print(0, wifiStatusString(status));
-    lcd.print(1, WiFi.SSID());
-    if (status == WL_CONNECTED) {
-      println("Connected to %s: %s",
-              WiFi.SSID().c_str(),
-              WiFi.localIP().toString().c_str());
-      lcd.print(2, WiFi.localIP().toString());
-    }
-    else {
-      println("WiFi status: %s", wifiStatusString(status));
-      lcd.clear(1); // clear ssid
-      lcd.clear(2); // clear ip
-    }
-    wifiStatus = status;
-  }
-
-  if (status == WL_CONNECTED) {
-    lcd.printf(0, 13, "%ld dBm", WiFi.RSSI());
-  }
 }
