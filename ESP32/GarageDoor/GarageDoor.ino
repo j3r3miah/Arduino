@@ -2,6 +2,7 @@
 #include <RTClib.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
+#include <ESPmDNS.h>
 #include <Bounce2.h>
 
 #include "Lcd.h"
@@ -10,8 +11,9 @@
 #include "Secrets.h"
 #include "Utils.h"
 
+#define MDNS_NAME "garage"
 #define LED_PIN LED_BUILTIN
-#define REED_SWITCH_PIN 27
+#define REED_SWITCH_PIN 26
 
 char DOW[7][12] = {
   "Sunday",
@@ -48,7 +50,6 @@ void setup() {
   reedSwitch.attach(REED_SWITCH_PIN, INPUT_PULLUP);
   reedSwitch.interval(25);
 
-  WiFi.begin(ssid, password);
   setupServer();
 }
 
@@ -136,6 +137,15 @@ void updateDisplay() {
 }
 
 void setupServer() {
+  WiFi.begin(ssid, password);
+
+  if (!MDNS.begin(MDNS_NAME)) {
+    println("mDNS responder failed");
+    while (true);
+  }
+  println("mDNS responder started");
+  MDNS.addService("http", "tcp", 80);
+
   const char *index_html = R"(
       <head><meta http-equiv="refresh" content="5"></head>
       <h2>
