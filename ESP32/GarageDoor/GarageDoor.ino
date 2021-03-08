@@ -1,8 +1,13 @@
+// disable opener and push notifications during dev
+#define NO_PUSH 1
+#define NO_OPENER 1
+
 #include <WiFi.h>
 #include <RTClib.h>
+#include <ESPmDNS.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
-#include <ESPmDNS.h>
+#include <Pushsafer.h>
 #include <Bounce2.h>
 
 #include "Lcd.h"
@@ -14,6 +19,7 @@
 #define MDNS_NAME "garage"
 #define LED_PIN LED_BUILTIN
 #define REED_SWITCH_PIN 26
+#define OPENER_PIN TODO
 
 char DOW[7][12] = {
   "Sunday",
@@ -25,14 +31,17 @@ char DOW[7][12] = {
   "Saturday"
 };
 
-char ssid[] = SECRET_SSID;
-char password[] = SECRET_PASS;
+char ssid[] = WIFI_SSID;
+char password[] = WIFI_PASS;
+char pusherKey[] = PUSHER_API_KEY;
 
 Lcd lcd;
 RTC_DS3231 rtc;
 Led led(LED_PIN);
 Bounce reedSwitch;
 AsyncWebServer server(80);
+WiFiClient pushClient;
+Pushsafer pusher(pusherKey, pushClient);
 EventLog logger;
 DateTime now;
 
@@ -62,13 +71,13 @@ void loop() {
 
   if (reedSwitch.fell()) {
       logger.write(now.unixtime(), EventType::DOOR_CLOSED);
-      // sendPush("Garage Door", "Door has closed");
+      sendPush("Garage", "Door has closed");
       lcd.backlight(true);
       led.blink(2);
   }
   else if (reedSwitch.rose()) {
       logger.write(now.unixtime(), EventType::DOOR_OPENED);
-      // sendPush("Garage Door", "Door has opened");
+      sendPush("Garage", "Door has opened");
       lcd.backlight(true);
       led.blink(2);
   }
@@ -165,32 +174,38 @@ void setupServer() {
   )";
 
   server.on("/", HTTP_GET, [index_html](AsyncWebServerRequest *request) {
+    led.blink(1);
     request->send_P(200, "text/html", index_html, templateVar);
   });
 
   server.on("/backlight", HTTP_GET, [](AsyncWebServerRequest *request) {
+    led.blink(1);
     lcd.toggleBacklight();
     request->redirect("/");
   });
 
   server.on("/activate", HTTP_GET, [](AsyncWebServerRequest *request) {
-    // TODO toggle door opener
+    led.blink(1);
+    activateOpener();
     request->redirect("/");
   });
 
   server.on("/api/status", HTTP_GET, [index_html](AsyncWebServerRequest *request) {
+    led.blink(1);
     request->send_P(200, "application/json",
                     R"({"door": "%door%", "timestamp": %timestamp%, "rssi": %rssi%})",
                     templateVar);
   });
 
   server.on("/api/backlight", HTTP_GET, [](AsyncWebServerRequest *request) {
+    led.blink(1);
     lcd.toggleBacklight();
     request->send(200, "application/json", R"({"status": "ok"})");
   });
 
   server.on("/api/activate", HTTP_GET, [](AsyncWebServerRequest *request) {
-    // TODO toggle door opener
+    led.blink(1);
+    activateOpener();
     request->send(200, "application/json", R"({"status": "ok"})");
   });
 
@@ -224,4 +239,29 @@ String templateVar(const String& var){
     return s;
   }
   return "";
+}
+
+void sendPush(String title, String message) {
+#ifdef NO_PUSH
+  Serial.print("Send push: ");
+  Serial.println(message);
+#else
+  struct PushSaferInput input;
+  input.device = "a"; // all devices
+  input.title = title;
+  input.message = message;
+  input.url = "http://garage.local";
+  pusher.sendEvent(input);
+  // TODO check for success
+#endif
+}
+
+void activateOpener() {
+#ifdef NO_OPENER
+  Serial.println("Toggle garage opener");
+#else
+    digitalWrite(OPENER_PIN, HIGH);
+    delay(50);
+    digitalWrite(OPENER_PIN, LOW);
+#endif
 }
