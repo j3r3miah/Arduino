@@ -40,6 +40,7 @@ RTC_DS3231 rtc;
 Led led(LED_PIN);
 Bounce reedSwitch;
 AsyncWebServer server(80);
+std::function<void()> serverAction;
 WiFiClient pushClient;
 Pushsafer pusher(pusherKey, pushClient);
 EventLog logger;
@@ -80,6 +81,11 @@ void loop() {
       sendPush("Garage", "Door has opened");
       lcd.backlight(true);
       led.blink(2);
+  }
+
+  if (serverAction != NULL) {
+    serverAction();
+    serverAction = NULL;
   }
 }
 
@@ -180,7 +186,9 @@ void setupServer() {
 
   server.on("/backlight", HTTP_GET, [](AsyncWebServerRequest *request) {
     led.blink(1);
-    lcd.toggleBacklight();
+    // since webserver is interrupt driven we can't talk to i2c here, so enqueue
+    // the action to execute in a subsequent loop pass
+    serverAction = [&]() { lcd.toggleBacklight(); };
     request->redirect("/");
   });
 
@@ -199,7 +207,9 @@ void setupServer() {
 
   server.on("/api/backlight", HTTP_GET, [](AsyncWebServerRequest *request) {
     led.blink(1);
-    lcd.toggleBacklight();
+    // since webserver is interrupt driven we can't talk to i2c here, so enqueue
+    // the action to execute in a subsequent loop pass
+    serverAction = [&]() { lcd.toggleBacklight(); };
     request->send(200, "application/json", R"({"status": "ok"})");
   });
 
