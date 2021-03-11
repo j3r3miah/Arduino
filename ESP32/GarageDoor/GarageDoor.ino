@@ -45,7 +45,8 @@ AsyncWebServer server(80);
 std::function<void()> serverAction;
 WiFiClient pushClient;
 Pushsafer pusher(pusherKey, pushClient);
-EventLog logger;
+MemoryArray loggerStorage(256);
+EventLog logger(loggerStorage);
 DateTime now;
 
 void setup() {

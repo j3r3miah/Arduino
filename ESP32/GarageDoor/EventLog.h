@@ -2,8 +2,6 @@
 #include <RTClib.h>
 #include <Utils.h>
 
-#define LOG_SIZE 256
-
 enum EventType {
   BOOTED,
   CONNECTED,
@@ -17,12 +15,21 @@ struct Record {
   EventType event;
 };
 
+class IArray {
+public:
+  virtual int size() const = 0;
+  virtual const Record get(int index) const = 0;
+  virtual void put(int index, Record record) = 0;
+};
+
 class EventLog {
-  Record logs[LOG_SIZE] = {};
+  IArray& storage;
   int head = -1;
   int tail = -1;
 
 public:
+  EventLog(IArray& storage) : storage(storage) {}
+
   void write(uint32_t timestamp, EventType event) {
     increment(head);
     if (tail == head)
@@ -30,21 +37,22 @@ public:
     if (tail == -1)
       tail = 0;
 
-    logs[head].timestamp = timestamp;
-    logs[head].event = event;
+    Record r = { timestamp, event };
+    storage.put(head, r);
   }
 
   void doEach(const std::function<void (uint32_t, EventType)>& f) {
     int p = tail;
     while (true) {
-      f(logs[p].timestamp, logs[p].event);
+      Record r = storage.get(p);
+      f(r.timestamp, r.event);
       if (p == head) break;
       increment(p);
     }
   }
 
   const Record last() const {
-    return logs[head];
+    return storage.get(head);
   }
 
   bool empty() const {
@@ -64,7 +72,29 @@ public:
 
 private:
   void increment(int &ptr) {
-    if (++ptr >= LOG_SIZE)
+    if (++ptr >= storage.size())
       ptr = 0;
+  }
+};
+
+class MemoryArray : public IArray {
+  int d_size;
+  Record *arr;
+
+public:
+  MemoryArray(int size) : d_size(size) {
+    arr = new Record[size]();
+  }
+
+  int size() const {
+    return d_size;
+  }
+
+  const Record get(int index) const {
+    return arr[index];
+  }
+
+  void put(int index, Record record) {
+    arr[index] = record;
   }
 };
