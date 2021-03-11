@@ -10,11 +10,13 @@
 #include <Pushsafer.h>
 #include <Bounce2.h>
 
+#include <WiFiUtils.h>
+#include <Utils.h>
+
 #include "Lcd.h"
 #include "Led.h"
 #include "EventLog.h"
 #include "Secrets.h"
-#include "Utils.h"
 
 #define MDNS_NAME "garage"
 #define LED_PIN LED_BUILTIN
