@@ -10,12 +10,12 @@
 #include <Pushsafer.h>
 #include <Bounce2.h>
 
+#include <EventLog.h>
 #include <WiFiUtils.h>
 #include <Utils.h>
 
 #include "Lcd.h"
 #include "Led.h"
-#include "EventLog.h"
 #include "Secrets.h"
 
 #define MDNS_NAME "garage"
@@ -33,6 +33,14 @@ char DOW[7][12] = {
   "Saturday"
 };
 
+enum EventType : uint8_t {
+  BOOTED,
+  CONNECTED,
+  DISCONNECTED,
+  DOOR_OPENED,
+  DOOR_CLOSED
+};
+
 char ssid[] = WIFI_SSID;
 char password[] = WIFI_PASS;
 char pusherKey[] = PUSHER_API_KEY;
@@ -45,14 +53,15 @@ AsyncWebServer server(80);
 std::function<void()> serverAction;
 WiFiClient pushClient;
 Pushsafer pusher(pusherKey, pushClient);
-MemoryArray loggerStorage(256);
-EventLog logger(loggerStorage);
+EEPROMArray storage(0x57, 4096);
+EventLog logger(storage);
 DateTime now;
 
 void setup() {
   Serial.begin(115200);
   setupClock();
   now = rtc.now();
+  logger.init();
   logger.write(now.unixtime(), EventType::BOOTED);
 
   led.init(5);
@@ -148,7 +157,7 @@ void updateDisplay() {
       Record r = logger.last();
       DateTime dt(r.timestamp);
       lcd.printf(2, "%s @ %02d:%02d",
-                 EventLog::toString(r.event),
+                 eventToString(r.event),
                  dt.hour(), dt.minute());
     }
   }
@@ -243,15 +252,26 @@ String templateVar(const String& var){
   }
   else if (var == "eventlog") {
     String s = "";
-    logger.doEach([&](uint32_t timestamp, EventType event) {
+    logger.doEach([&](uint32_t timestamp, uint8_t event) {
       s.concat(DateTime(timestamp).timestamp());
       s.concat(" :: ");
-      s.concat(EventLog::toString(event));
+      s.concat(eventToString(event));
       s.concat("\n");
     });
     return s;
   }
   return "";
+}
+
+static const char* eventToString(uint8_t event) {
+  switch ((EventType)event) {
+    case BOOTED: return "Booted";
+    case CONNECTED: return "Connected";
+    case DISCONNECTED: return "Disconnected";
+    case DOOR_OPENED: return "Opened";
+    case DOOR_CLOSED: return "Closed";
+    default: return "Unknown";
+  }
 }
 
 void sendPush(String title, String message) {
