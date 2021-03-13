@@ -260,7 +260,7 @@ public:
 
   void init() {
     if (!fram.begin(i2cAddress)) {
-      println("No EEPROM found");
+      println("No FRAM found");
       while (true);
     }
     INonVolatileArray::init();

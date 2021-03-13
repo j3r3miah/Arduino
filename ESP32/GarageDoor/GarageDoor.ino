@@ -52,8 +52,7 @@ WebServer server(80);
 std::function<void()> serverAction;
 WiFiClient pushClient;
 Pushsafer pusher(pusherKey, pushClient);
-EEPROMArray storage(0x57, 4096);
-// MemoryArray storage(16);
+FRAMArray storage(0x50, 32768);
 EventLog logger(storage);
 DateTime now;
 
