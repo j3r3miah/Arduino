@@ -5,9 +5,9 @@
 RTC_DS3231 rtc;
 DateTime now;
 
-MemoryArray loggerStorage(256);
-// EEPROMArray loggerStorage(0x57, 4096);
-EventLog logger(loggerStorage);
+// MemoryArray storage(256);
+EEPROMArray storage(0x57, 64); // actually 4096 bytes
+EventLog logger(storage);
 
 enum EventType : uint8_t {
   BOOTED,
@@ -40,7 +40,7 @@ void setup() {
   now = rtc.now();
 
   logger.init();
-  logger.write(now.unixtime(), EventType::BOOTED);
+  // logger.write(now.unixtime(), EventType::BOOTED);
 
   println("Booted");
 }
@@ -53,16 +53,17 @@ void loop() {
   }
 
   if (Serial.available() > 0) {
+    println();
     String cmd = Serial.readString();
     cmd.trim();
-    if (cmd == "logs") {
-      println("\nEventLog\n---------");
+    if (cmd == "p") {
+      println("--- EventLog (%d) ---", storage.len());
+      int i = 0;
       logger.doEach([&](uint32_t timestamp, uint8_t event) {
-        println("%s :: %s",
+        println("%02d: %s :: %s", i++,
           DateTime(timestamp).timestamp().c_str(),
           eventToString(event));
       });
-      println();
     }
     else if (cmd == "c") {
       println("Logging door closed");
@@ -76,9 +77,17 @@ void loop() {
       println("Logging connected");
       logger.write(now.unixtime(), EventType::CONNECTED);
     }
+    else if (cmd == "clear") {
+      println("Clearing EEPROM");
+      storage.clear();
+    }
     else if (cmd == "d") {
-      println("Logging disconnected");
-      logger.write(now.unixtime(), EventType::DISCONNECTED);
+      println("Dumping EEPROM");
+      storage.dump();
+    }
+    else if (cmd == "r") {
+      println("Resetting EEPROM pointers");
+      storage.resetPointers();
     }
   }
 }

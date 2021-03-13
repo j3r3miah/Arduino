@@ -3,11 +3,6 @@
 #include <SparkFun_External_EEPROM.h>
 #include <Utils.h>
 
-// TODO
-//   the storage class needs to manage the head/tail pointers
-//   upon init, the eeprom storage needs to figure out previous head/tail values
-//   logging to i2c causes issues with interrupts
-
 struct Record {
   uint32_t timestamp;
   uint8_t event;
@@ -18,7 +13,7 @@ protected:
   int head = -1;
   int tail = -1;
 
-  virtual const Record get(int index) const = 0;
+  virtual const Record get(int index) = 0;
   virtual void put(int index, Record record) = 0;
 
   void increment(int &ptr) {
@@ -29,9 +24,15 @@ protected:
 public:
   virtual void init() = 0;
 
-  virtual int size() const = 0;
+  virtual int size() = 0;
 
-  bool empty() const {
+  int len() {
+    if (empty()) return 0;
+    if (tail == 0) return head + 1;
+    return size();
+  }
+
+  bool empty() {
     return head == -1;
   }
 
@@ -45,11 +46,12 @@ public:
     put(head, record);
   }
 
-  const Record last() const {
+  const Record last() {
     return get(head);
   }
 
   void doEach(const std::function<void (uint32_t, uint8_t)>& f) {
+    if (empty()) return;
     int p = tail;
     while (true) {
       Record r = get(p);
@@ -79,11 +81,11 @@ public:
     storage.doEach(f);
   }
 
-  const Record last() const {
+  const Record last() {
     return storage.last();
   }
 
-  bool empty() const {
+  bool empty() {
     return storage.empty();
   }
 };
@@ -97,20 +99,13 @@ public:
     arr = new Record[size]();
   }
 
-  void init() {
-    Record r1 = { 1615559784, 3 };
-    Record r2 = { 1615559784, 2 };
-    put(0, r1);
-    put(1, r2);
-    head = 1;
-    tail = 0;
-  }
+  void init() { }
 
-  int size() const {
+  int size() {
     return d_size;
   }
 
-  const Record get(int index) const {
+  const Record get(int index) {
     return arr[index];
   }
 
@@ -119,8 +114,9 @@ public:
   }
 };
 
-/*
 class EEPROMArray : public IStorage {
+  const int RECORD_SIZE = 5;
+
   uint8_t i2cAddress;
   uint32_t sizeBytes;
   ExternalEEPROM eeprom;
@@ -135,20 +131,104 @@ public:
       while (true);
     }
     eeprom.setMemorySize(sizeBytes);
+    resetPointers();
   }
 
   int size() {
-    return sizeBytes;
+    return sizeBytes / RECORD_SIZE;
   }
 
   const Record get(int index) {
-    Record record;
-    eeprom.get(index, record);
+    Record record = {
+      readUInt(index * RECORD_SIZE),
+      readByte(index * RECORD_SIZE + 4)
+    };
     return record;
   }
 
   void put(int index, Record record) {
-    eeprom.put(index, record);
+    write(index * RECORD_SIZE, record.timestamp);
+    write(index * RECORD_SIZE + 4, record.event);
+  }
+
+  void clear() {
+    for (int i = 0; i < sizeBytes; i++) {
+      if (readByte(i) != 0) {
+        write(i, (uint8_t)0);
+      }
+    }
+    resetPointers();
+  }
+
+  void resetPointers() {
+    uint32_t maxTime = 0;
+    int maxIndex = -1;
+    for (int i = 0; i < size(); i++) {
+      uint32_t timestamp = readUInt(i * RECORD_SIZE);
+      if (timestamp == 0) break;
+      if (timestamp >= maxTime) {
+        maxTime = timestamp;
+        maxIndex = i;
+      }
+      else {
+        break;
+      }
+    }
+    head = tail = maxIndex;
+
+    // buffer is empty
+    if (head == -1) return;
+    // set tail one after head, assuming circle buffer is full
+    increment(tail);
+    // if tail timestamp is zero, circle buffer is not actually full
+    uint32_t tailTime = 1;
+    if (head < size() - 1) {
+      tailTime = readUInt(tail * RECORD_SIZE);
+    }
+    if (tailTime == 0) {
+      tail = 0;
+    }
+    // println("head=%d, tail=%d", head, tail);
+  }
+
+  void dump() {
+    int len = size() * RECORD_SIZE;
+    println("head=%d, tail=%d", head, tail);
+    for (int loc = 0; loc < len; loc += 5) {
+      print("0x%04X - ", loc);
+      print("%02X ", eeprom.read(loc + 0));
+      print("%02X ", eeprom.read(loc + 1));
+      print("%02X ", eeprom.read(loc + 2));
+      print("%02X ", eeprom.read(loc + 3));
+      print("%02X - ", eeprom.read(loc + 4));
+      Record record = {
+        readUInt(loc),
+        readByte(loc + 4)
+      };
+      println("%s :: %d", DateTime(record.timestamp).timestamp().c_str(), record.event);
+    }
+  }
+
+private:
+  void write(int location, uint32_t value) {
+    char *p = (char *)&value;
+    for (int i = 0; i < 4; i++)
+      eeprom.write(location + i, p[i]);
+  }
+
+  void write(int location, uint8_t value) {
+    eeprom.write(location, value);
+  }
+
+  uint8_t readByte(int location) {
+    return eeprom.read(location);
+  }
+
+  uint32_t readUInt(int location) {
+    uint32_t value;
+    char *p = (char *)&value;
+    for (int i = 0; i < 4; i++)
+      p[i] = eeprom.read(location + i);
+    return value;
   }
 };
-*/
