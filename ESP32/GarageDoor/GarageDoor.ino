@@ -21,6 +21,8 @@
 #define LED_PIN LED_BUILTIN
 #define REED_SWITCH_PIN 26
 #define OPENER_PIN TODO
+#define TOUCH_PIN 13
+#define TOUCH_THRESHOLD 30
 
 char DOW[7][12] = {
   "Sunday",
@@ -49,7 +51,6 @@ RTC_DS3231 rtc;
 Led led(LED_PIN);
 Bounce reedSwitch;
 WebServer server(80);
-std::function<void()> serverAction;
 WiFiClient pushClient;
 Pushsafer pusher(pusherKey, pushClient);
 FRAMArray storage(0x50, 32768);
@@ -77,28 +78,11 @@ void setup() {
 void loop() {
   led.update();
   lcd.update();
-  reedSwitch.update();
   updateClock();
   updateDisplay();
+  checkReedSwitch();
+  checkTouchSwitch();
   server.handleClient();
-
-  if (reedSwitch.fell()) {
-      logger.write(now.unixtime(), EventType::DOOR_CLOSED);
-      sendPush("Garage", "Door has closed");
-      lcd.backlight(true);
-      led.blink(2);
-  }
-  else if (reedSwitch.rose()) {
-      logger.write(now.unixtime(), EventType::DOOR_OPENED);
-      sendPush("Garage", "Door has opened");
-      lcd.backlight(true);
-      led.blink(2);
-  }
-
-  if (serverAction != NULL) {
-    serverAction();
-    serverAction = NULL;
-  }
 }
 
 void setupClock() {
@@ -201,14 +185,14 @@ void setupServer() {
     led.blink(1);
     lcd.toggleBacklight();
     server.sendHeader("Location", "/");
-    server.send(301);
+    server.send(302);
   });
 
   server.on("/activate", HTTP_GET, []() {
     led.blink(1);
     activateOpener();
     server.sendHeader("Location", "/");
-    server.send(301);
+    server.send(302);
   });
 
   server.on("/api/status", HTTP_GET, [index_html]() {
@@ -316,4 +300,49 @@ void activateOpener() {
     delay(50);
     digitalWrite(OPENER_PIN, LOW);
 #endif
+}
+
+void checkReedSwitch() {
+  reedSwitch.update();
+  if (reedSwitch.fell()) {
+      logger.write(now.unixtime(), EventType::DOOR_CLOSED);
+      sendPush("Garage", "Door has closed");
+      lcd.backlight(true);
+      led.blink(2);
+  }
+  else if (reedSwitch.rose()) {
+      logger.write(now.unixtime(), EventType::DOOR_OPENED);
+      sendPush("Garage", "Door has opened");
+      lcd.backlight(true);
+      led.blink(2);
+  }
+}
+
+void checkTouchSwitch() {
+  static uint32_t lastToggle;
+  static uint32_t lastTouch;
+  static uint32_t lastCheck;
+  static int count;
+
+  // sample capacitive switch every 50 ms
+  if (millis() - lastCheck >= 50) {
+    lastCheck = millis();
+    count = touchRead(TOUCH_PIN) < TOUCH_THRESHOLD ? count + 1 : 0;
+    // if still touched after 3 cycles, activate
+    if (count > 2) {
+      // and last toggle was more than 3s ago
+      if (millis() - lastToggle >= 1000) {
+        lastToggle = millis();
+        lcd.toggleBacklight();
+        count = 0;
+      }
+    }
+  }
+
+  // debug trace to help calibrate threshold
+  // static uint32_t lastDebug;
+  // if (millis() - lastDebug >= 500) {
+  //   lastDebug = millis();
+  //   println("Touch sensor: %d", touchRead(TOUCH_PIN));
+  // }
 }
