@@ -1,6 +1,7 @@
 #include <functional>
 #include <RTClib.h>
 #include <SparkFun_External_EEPROM.h>
+#include <Adafruit_FRAM_I2C.h>
 #include <Utils.h>
 
 struct Record {
@@ -114,23 +115,23 @@ public:
   }
 };
 
-class EEPROMArray : public IStorage {
+class INonVolatileArray : public IStorage {
+protected:
   const int RECORD_SIZE = 5;
 
   uint8_t i2cAddress;
   uint32_t sizeBytes;
-  ExternalEEPROM eeprom;
+
+  virtual void write32(int location, uint32_t value) = 0;
+  virtual void write8(int location, uint8_t value) = 0;
+  virtual uint8_t read8(int location) = 0;
+  virtual uint32_t read32(int location) = 0;
 
 public:
-  EEPROMArray(uint8_t i2cAddress, uint32_t sizeBytes) :
+  INonVolatileArray(uint8_t i2cAddress, uint32_t sizeBytes) :
     i2cAddress(i2cAddress), sizeBytes(sizeBytes) {}
 
-  void init() {
-    if (!eeprom.begin(i2cAddress)) {
-      println("No EEPROM found");
-      while (true);
-    }
-    eeprom.setMemorySize(sizeBytes);
+  virtual void init() {
     resetPointers();
   }
 
@@ -140,21 +141,21 @@ public:
 
   const Record get(int index) {
     Record record = {
-      readUInt(index * RECORD_SIZE),
-      readByte(index * RECORD_SIZE + 4)
+      read32(index * RECORD_SIZE),
+      read8(index * RECORD_SIZE + 4)
     };
     return record;
   }
 
   void put(int index, Record record) {
-    write(index * RECORD_SIZE, record.timestamp);
-    write(index * RECORD_SIZE + 4, record.event);
+    write32(index * RECORD_SIZE, record.timestamp);
+    write8(index * RECORD_SIZE + 4, record.event);
   }
 
   void clear() {
     for (int i = 0; i < sizeBytes; i++) {
-      if (readByte(i) != 0) {
-        write(i, (uint8_t)0);
+      if (read8(i) != 0) {
+        write8(i, (uint8_t)0);
       }
     }
     resetPointers();
@@ -164,7 +165,7 @@ public:
     uint32_t maxTime = 0;
     int maxIndex = -1;
     for (int i = 0; i < size(); i++) {
-      uint32_t timestamp = readUInt(i * RECORD_SIZE);
+      uint32_t timestamp = read32(i * RECORD_SIZE);
       if (timestamp == 0) break;
       if (timestamp >= maxTime) {
         maxTime = timestamp;
@@ -183,7 +184,7 @@ public:
     // if tail timestamp is zero, circle buffer is not actually full
     uint32_t tailTime = 1;
     if (head < size() - 1) {
-      tailTime = readUInt(tail * RECORD_SIZE);
+      tailTime = read32(tail * RECORD_SIZE);
     }
     if (tailTime == 0) {
       tail = 0;
@@ -196,39 +197,95 @@ public:
     println("head=%d, tail=%d", head, tail);
     for (int loc = 0; loc < len; loc += 5) {
       print("0x%04X - ", loc);
-      print("%02X ", eeprom.read(loc + 0));
-      print("%02X ", eeprom.read(loc + 1));
-      print("%02X ", eeprom.read(loc + 2));
-      print("%02X ", eeprom.read(loc + 3));
-      print("%02X - ", eeprom.read(loc + 4));
+      print("%02X ", read8(loc + 0));
+      print("%02X ", read8(loc + 1));
+      print("%02X ", read8(loc + 2));
+      print("%02X ", read8(loc + 3));
+      print("%02X - ", read8(loc + 4));
       Record record = {
-        readUInt(loc),
-        readByte(loc + 4)
+        read32(loc),
+        read8(loc + 4)
       };
       println("%s :: %d", DateTime(record.timestamp).timestamp().c_str(), record.event);
     }
   }
+};
 
-private:
-  void write(int location, uint32_t value) {
+class EEPROMArray : public INonVolatileArray {
+  ExternalEEPROM eeprom;
+
+public:
+  EEPROMArray(uint8_t i2cAddress, uint32_t sizeBytes) :
+    INonVolatileArray(i2cAddress, sizeBytes) {}
+
+  void init() {
+    if (!eeprom.begin(i2cAddress)) {
+      println("No EEPROM found");
+      while (true);
+    }
+    eeprom.setMemorySize(sizeBytes);
+    INonVolatileArray::init();
+  }
+
+protected:
+  void write32(int location, uint32_t value) {
     char *p = (char *)&value;
     for (int i = 0; i < 4; i++)
       eeprom.write(location + i, p[i]);
   }
 
-  void write(int location, uint8_t value) {
+  void write8(int location, uint8_t value) {
     eeprom.write(location, value);
   }
 
-  uint8_t readByte(int location) {
+  uint8_t read8(int location) {
     return eeprom.read(location);
   }
 
-  uint32_t readUInt(int location) {
+  uint32_t read32(int location) {
     uint32_t value;
     char *p = (char *)&value;
     for (int i = 0; i < 4; i++)
       p[i] = eeprom.read(location + i);
+    return value;
+  }
+};
+
+class FRAMArray : public INonVolatileArray {
+  Adafruit_FRAM_I2C fram = Adafruit_FRAM_I2C();
+
+public:
+  FRAMArray(uint8_t i2cAddress, uint32_t sizeBytes) :
+    INonVolatileArray(i2cAddress, sizeBytes) {}
+
+  void init() {
+    if (!fram.begin(i2cAddress)) {
+      println("No EEPROM found");
+      while (true);
+    }
+    INonVolatileArray::init();
+  }
+
+protected:
+  void write32(int location, uint32_t value) {
+    char *p = (char *)&value;
+    for (int i = 0; i < 4; i++)
+      fram.write8(location + i, p[i]);
+  }
+
+  void write8(int location, uint8_t value) {
+    fram.write8(location, value);
+  }
+
+  uint8_t read8(int location) {
+    return fram.read8(location);
+  }
+
+  uint32_t read32(int location) {
+    uint32_t value;
+    char *p = (char *)&value;
+    for (int i = 0; i < 4; i++)
+      p[i] = fram.read8(location + i);
     return value;
   }
 };

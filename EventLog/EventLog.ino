@@ -6,7 +6,8 @@ RTC_DS3231 rtc;
 DateTime now;
 
 // MemoryArray storage(256);
-EEPROMArray storage(0x57, 64); // actually 4096 bytes
+// EEPROMArray storage(0x57, 64); // actually 4096 bytes
+FRAMArray storage(0x50, 64); // actually 32kb
 EventLog logger(storage);
 
 enum EventType : uint8_t {
