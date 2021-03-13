@@ -5,8 +5,7 @@
 #include <WiFi.h>
 #include <RTClib.h>
 #include <ESPmDNS.h>
-#include <AsyncTCP.h>
-#include <ESPAsyncWebServer.h>
+#include <WebServer.h>
 #include <Pushsafer.h>
 #include <Bounce2.h>
 
@@ -49,11 +48,12 @@ Lcd lcd;
 RTC_DS3231 rtc;
 Led led(LED_PIN);
 Bounce reedSwitch;
-AsyncWebServer server(80);
+WebServer server(80);
 std::function<void()> serverAction;
 WiFiClient pushClient;
 Pushsafer pusher(pusherKey, pushClient);
 EEPROMArray storage(0x57, 4096);
+// MemoryArray storage(16);
 EventLog logger(storage);
 DateTime now;
 
@@ -81,6 +81,7 @@ void loop() {
   reedSwitch.update();
   updateClock();
   updateDisplay();
+  server.handleClient();
 
   if (reedSwitch.fell()) {
       logger.write(now.unixtime(), EventType::DOOR_CLOSED);
@@ -173,7 +174,7 @@ void setupServer() {
   println("mDNS responder started");
   MDNS.addService("http", "tcp", 80);
 
-  const char *index_html = R"(
+  String index_html = R"(
       <head><meta http-equiv="refresh" content="5"></head>
       <h2>
       Garage is %door%<br>
@@ -191,50 +192,69 @@ void setupServer() {
       </pre>
   )";
 
-  server.on("/", HTTP_GET, [index_html](AsyncWebServerRequest *request) {
+
+  server.on("/", HTTP_GET, [index_html]() {
     led.blink(1);
-    request->send_P(200, "text/html", index_html, templateVar);
+    server.send(200, "text/html", injectVars(index_html));
   });
 
-  server.on("/backlight", HTTP_GET, [](AsyncWebServerRequest *request) {
+  server.on("/backlight", HTTP_GET, []() {
     led.blink(1);
-    // since webserver is interrupt driven we can't talk to i2c here, so enqueue
-    // the action to execute in a subsequent loop pass
-    serverAction = [&]() { lcd.toggleBacklight(); };
-    request->redirect("/");
+    lcd.toggleBacklight();
+    server.sendHeader("Location", "/");
+    server.send(301);
   });
 
-  server.on("/activate", HTTP_GET, [](AsyncWebServerRequest *request) {
+  server.on("/activate", HTTP_GET, []() {
     led.blink(1);
     activateOpener();
-    request->redirect("/");
+    server.sendHeader("Location", "/");
+    server.send(301);
   });
 
-  server.on("/api/status", HTTP_GET, [index_html](AsyncWebServerRequest *request) {
+  server.on("/api/status", HTTP_GET, [index_html]() {
     led.blink(1);
-    request->send_P(200, "application/json",
-                    R"({"door": "%door%", "timestamp": %timestamp%, "rssi": %rssi%})",
-                    templateVar);
+    server.send(200, "application/json",
+      injectVars(R"({"door": "%door%", "timestamp": %timestamp%, "rssi": %rssi%})"));
   });
 
-  server.on("/api/backlight", HTTP_GET, [](AsyncWebServerRequest *request) {
+  server.on("/api/backlight", HTTP_GET, []() {
     led.blink(1);
-    // since webserver is interrupt driven we can't talk to i2c here, so enqueue
-    // the action to execute in a subsequent loop pass
-    serverAction = [&]() { lcd.toggleBacklight(); };
-    request->send(200, "application/json", R"({"status": "ok"})");
+    lcd.toggleBacklight();
+    server.send(200, "application/json", R"({"status": "ok"})");
   });
 
-  server.on("/api/activate", HTTP_GET, [](AsyncWebServerRequest *request) {
+  server.on("/api/activate", HTTP_GET, []() {
     led.blink(1);
     activateOpener();
-    request->send(200, "application/json", R"({"status": "ok"})");
+    server.send(200, "application/json", R"({"status": "ok"})");
   });
 
   server.begin();
 }
 
-String templateVar(const String& var){
+String injectVars(const String& str) {
+  String ret = String(str);
+  int start = -1;
+  for (int i = 0; i < str.length(); i++) {
+    if (str[i] == '%') {
+      if (start == -1) { // found start of token
+        start = i;
+      }
+      else { // found end of token
+        String token = str.substring(start, i + 1);
+        if (token.length() > 2) {
+          String var = token.substring(1, token.length() - 1);
+          ret.replace(token, getVar(var));
+        }
+        start = -1;
+      }
+    }
+  }
+  return ret;
+}
+
+String getVar(const String& var) {
   if (var == "door") {
     return digitalRead(REED_SWITCH_PIN) == LOW ? "closed" : "open";
   }
