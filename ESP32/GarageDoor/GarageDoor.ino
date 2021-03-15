@@ -1,6 +1,6 @@
 // disable opener and push notifications during dev
-#define NO_PUSH 1
-#define NO_OPENER 1
+// #define NO_PUSH 1
+// #define NO_OPENER 1
 
 #include <WiFi.h>
 #include <RTClib.h>
@@ -20,9 +20,9 @@
 #define MDNS_NAME "garage"
 #define LED_PIN LED_BUILTIN
 #define REED_SWITCH_PIN 26
-#define OPENER_PIN TODO
-#define TOUCH_PIN 13
-#define TOUCH_THRESHOLD 30
+#define OPENER_PIN 32
+#define TOUCH_PIN 33
+#define TOUCH_THRESHOLD 20
 
 char DOW[7][12] = {
   "Sunday",
@@ -69,6 +69,8 @@ void setup() {
   lcd.sleepAfter(1000 * 60 * 3);
   lcd.backlight(true);
 
+  pinMode(TOUCH_PIN, INPUT);
+  pinMode(OPENER_PIN, OUTPUT);
   reedSwitch.attach(REED_SWITCH_PIN, INPUT_PULLUP);
   reedSwitch.interval(25);
 
@@ -293,9 +295,8 @@ void sendPush(String title, String message) {
 }
 
 void activateOpener() {
-#ifdef NO_OPENER
-  Serial.println("Toggle garage opener");
-#else
+  println("Toggle garage opener");
+#ifndef NO_OPENER
     digitalWrite(OPENER_PIN, HIGH);
     delay(50);
     digitalWrite(OPENER_PIN, LOW);
