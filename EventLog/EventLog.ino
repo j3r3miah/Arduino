@@ -7,7 +7,7 @@ DateTime now;
 
 // MemoryArray storage(256);
 // EEPROMArray storage(0x57, 64); // actually 4096 bytes
-FRAMArray storage(0x50, 64); // actually 32kb
+FRAMArray storage(0x50, 32768); // actually 32kb
 EventLog logger(storage);
 
 enum EventType : uint8_t {
@@ -39,11 +39,7 @@ void setup() {
   }
 
   now = rtc.now();
-
   logger.init();
-  // logger.write(now.unixtime(), EventType::BOOTED);
-
-  println("Booted");
 }
 
 void loop() {
@@ -65,6 +61,15 @@ void loop() {
           DateTime(timestamp).timestamp().c_str(),
           eventToString(event));
       });
+    }
+    else if (cmd == "r") {
+      println("--- EventLog (%d) ---", storage.len());
+      int i = 0;
+      logger.doEach([&](uint32_t timestamp, uint8_t event) {
+        println("%02d: %s :: %s", i++,
+          DateTime(timestamp).timestamp().c_str(),
+          eventToString(event));
+      }, true);
     }
     else if (cmd == "c") {
       println("Logging door closed");

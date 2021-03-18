@@ -17,10 +17,8 @@ protected:
   virtual const Record get(int index) = 0;
   virtual void put(int index, Record record) = 0;
 
-  void increment(int &ptr) {
-    if (++ptr >= size())
-      ptr = 0;
-  }
+  void increment(int &ptr) { if (++ptr >= size()) ptr = 0; }
+  void decrement(int &ptr) { if (--ptr < 0) ptr = size() - 1; }
 
 public:
   virtual void init() = 0;
@@ -51,14 +49,25 @@ public:
     return get(head);
   }
 
-  void doEach(const std::function<void (uint32_t, uint8_t)>& f) {
+  void doEach(const std::function<void (uint32_t, uint8_t)>& f, bool reverse) {
     if (empty()) return;
-    int p = tail;
-    while (true) {
-      Record r = get(p);
-      f(r.timestamp, r.event);
-      if (p == head) break;
-      increment(p);
+    if (reverse) {
+      int p = head;
+      while (true) {
+        Record r = get(p);
+        f(r.timestamp, r.event);
+        if (p == tail) break;
+        decrement(p);
+      }
+    }
+    else {
+      int p = tail;
+      while (true) {
+        Record r = get(p);
+        f(r.timestamp, r.event);
+        if (p == head) break;
+        increment(p);
+      }
     }
   }
 };
@@ -78,8 +87,8 @@ public:
     storage.add(r);
   }
 
-  void doEach(const std::function<void (uint32_t, uint8_t)>& f) {
-    storage.doEach(f);
+  void doEach(const std::function<void (uint32_t, uint8_t)>& f, bool reverse = false) {
+    storage.doEach(f, reverse);
   }
 
   const Record last() {
