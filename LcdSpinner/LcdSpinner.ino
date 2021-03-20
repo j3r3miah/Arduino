@@ -63,5 +63,5 @@ void loop()
 {
   tickSpinner(9, 2, tick);
   if (++tick > 3) tick = 0;
-  delay(200);
+  delay(100);
 }

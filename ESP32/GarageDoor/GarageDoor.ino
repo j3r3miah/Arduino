@@ -1,6 +1,5 @@
-// disable opener and push notifications during dev
-// #define NO_PUSH 1
-// #define NO_OPENER 1
+// disable opener, push notifications, and non-volatile logging
+// #define DEV_MODE
 
 #include <WiFi.h>
 #include <RTClib.h>
@@ -62,7 +61,7 @@ void setup() {
   setupClock();
   now = rtc.now();
   logger.init();
-  logger.write(now.unixtime(), EventType::BOOTED);
+  log(EventType::BOOTED);
 
   led.init(5);
   lcd.init();
@@ -115,14 +114,14 @@ void updateDisplay() {
     lastStatus = WiFi.status();
     lcd.print(0, wifiStatusString(lastStatus));
     if (lastStatus == WL_CONNECTED) {
-      logger.write(now.unixtime(), EventType::CONNECTED);
+      log(EventType::CONNECTED);
       println("Connected to %s: %s",
               WiFi.SSID().c_str(),
               WiFi.localIP().toString().c_str());
       lcd.print(1, WiFi.localIP().toString());
     }
     else {
-      logger.write(now.unixtime(), EventType::DISCONNECTED);
+      log(EventType::DISCONNECTED);
       println("WiFi status: %s", wifiStatusString(lastStatus));
       lcd.clear(1); // clear ip
     }
@@ -160,27 +159,55 @@ void setupServer() {
   MDNS.addService("http", "tcp", 80);
 
   String index_html = R"(
+    <html>
       <head><meta http-equiv="refresh" content="5"></head>
-      <h2>
-      Garage is %door%<br>
-      <p>
-      Toggle <a href="/activate">Garage Opener</a><br>
-      <p>
-      Toggle <a href="/backlight">Backlight</a><br>
-      <p>
-      %ssid% (%rssi% dBm)<br>
-      <p>
-      %now%
-      <h2>
-      <pre>
+      <body>
+        <h2>
+          Garage is %door%
+          <p>
+          Toggle <a href="/activate">Garage Opener</a>
+          <p>
+          Toggle <a href="/backlight">Backlight</a>
+          <p>
+          %ssid% (%rssi% dBm)
+          <p>
+          %now%
+        </h2>
+        <pre>
+%eventlog_10%
+        </pre>
+        <a href="/logs">More Logs</a>
+      </body>
+    </html>
+  )";
+
+  String logs_html = R"(
+    <html>
+      <body>
+        <h2>
+          <a href="/">Home</a>
+          <p>
+          Garage is %door%
+          <p>
+          %now%
+          <p>
+        </h2>
+        <pre>
 %eventlog%
-      </pre>
+        </pre>
+      </body>
+    </html>
   )";
 
 
   server.on("/", HTTP_GET, [index_html]() {
     led.blink(1);
     server.send(200, "text/html", injectVars(index_html));
+  });
+
+  server.on("/logs", HTTP_GET, [logs_html]() {
+    led.blink(1);
+    server.send(200, "text/html", injectVars(logs_html));
   });
 
   server.on("/backlight", HTTP_GET, []() {
@@ -199,8 +226,8 @@ void setupServer() {
 
   server.on("/api/status", HTTP_GET, [index_html]() {
     led.blink(1);
-    server.send(200, "application/json",
-      injectVars(R"({"door": "%door%", "timestamp": %timestamp%, "rssi": %rssi%})"));
+    String json = R"({"door": "%door%", "timestamp": %timestamp%, "rssi": %rssi%})";
+    server.send(200, "application/json", injectVars(json));
   });
 
   server.on("/api/backlight", HTTP_GET, []() {
@@ -255,17 +282,26 @@ String getVar(const String& var) {
   else if (var == "now") {
     return now.timestamp();
   }
+  else if (var == "eventlog_10") {
+    return getLogs(10, true);
+  }
   else if (var == "eventlog") {
-    String s = "";
-    logger.doEach([&](uint32_t timestamp, uint8_t event) {
-      s.concat(DateTime(timestamp).timestamp());
-      s.concat(" :: ");
-      s.concat(eventToString(event));
-      s.concat("\n");
-    });
-    return s;
+    // note: FRAM takes about 3ms to read each record
+    return getLogs(INT_MAX, false);
   }
   return "";
+}
+
+String getLogs(int maxCount, bool reverse) {
+  int i = 0;
+  String s = "";
+  logger.doEach([&](uint32_t timestamp, uint8_t event) {
+    s.concat(DateTime(timestamp).timestamp());
+    s.concat(" :: ");
+    s.concat(eventToString(event));
+    s.concat("\n");
+  }, maxCount, reverse);
+  return s;
 }
 
 static const char* eventToString(uint8_t event) {
@@ -280,23 +316,20 @@ static const char* eventToString(uint8_t event) {
 }
 
 void sendPush(String title, String message) {
-#ifdef NO_PUSH
-  Serial.print("Send push: ");
-  Serial.println(message);
-#else
+  println("Send push: %s", message);
+#ifndef DEV_MODE
   struct PushSaferInput input;
   input.device = "a"; // all devices
   input.title = title;
   input.message = message;
   input.url = "http://garage.local";
   pusher.sendEvent(input);
-  // TODO check for success
 #endif
 }
 
 void activateOpener() {
   println("Toggle garage opener");
-#ifndef NO_OPENER
+#ifndef DEV_MODE
     digitalWrite(OPENER_PIN, HIGH);
     delay(50);
     digitalWrite(OPENER_PIN, LOW);
@@ -306,13 +339,13 @@ void activateOpener() {
 void checkReedSwitch() {
   reedSwitch.update();
   if (reedSwitch.fell()) {
-      logger.write(now.unixtime(), EventType::DOOR_CLOSED);
+      log(EventType::DOOR_CLOSED);
       sendPush("Garage", "Door has closed");
       lcd.backlight(true);
       led.blink(2);
   }
   else if (reedSwitch.rose()) {
-      logger.write(now.unixtime(), EventType::DOOR_OPENED);
+      log(EventType::DOOR_OPENED);
       sendPush("Garage", "Door has opened");
       lcd.backlight(true);
       led.blink(2);
@@ -346,4 +379,10 @@ void checkTouchSwitch() {
   //   lastDebug = millis();
   //   println("Touch sensor: %d", touchRead(TOUCH_PIN));
   // }
+}
+
+void log(EventType event) {
+#ifndef DEV_MODE
+  logger.write(now.unixtime(), event);
+#endif
 }

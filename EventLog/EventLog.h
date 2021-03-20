@@ -49,14 +49,16 @@ public:
     return get(head);
   }
 
-  void doEach(const std::function<void (uint32_t, uint8_t)>& f, bool reverse) {
+  void doEach(const std::function<void (uint32_t, uint8_t)>& f,
+              int maxCount, bool reverse) {
+    int count = 0;
     if (empty()) return;
     if (reverse) {
       int p = head;
       while (true) {
         Record r = get(p);
         f(r.timestamp, r.event);
-        if (p == tail) break;
+        if (p == tail || ++count == maxCount) break;
         decrement(p);
       }
     }
@@ -65,7 +67,7 @@ public:
       while (true) {
         Record r = get(p);
         f(r.timestamp, r.event);
-        if (p == head) break;
+        if (p == head || ++count == maxCount) break;
         increment(p);
       }
     }
@@ -87,8 +89,9 @@ public:
     storage.add(r);
   }
 
-  void doEach(const std::function<void (uint32_t, uint8_t)>& f, bool reverse = false) {
-    storage.doEach(f, reverse);
+  void doEach(const std::function<void (uint32_t, uint8_t)>& f,
+              int maxCount = INT_MAX, bool reverse = false) {
+    storage.doEach(f, maxCount, reverse);
   }
 
   const Record last() {
