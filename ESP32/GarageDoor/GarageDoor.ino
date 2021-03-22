@@ -73,6 +73,7 @@ void setup() {
   reedSwitch.attach(REED_SWITCH_PIN, INPUT_PULLUP);
   reedSwitch.interval(25);
 
+  setupNetwork();
   setupServer();
 }
 
@@ -97,6 +98,46 @@ void setupClock() {
   }
 }
 
+void setupNetwork() {
+  WiFi.disconnect(true);
+
+  WiFi.onEvent([](WiFiEvent_t event) {
+    switch (event) {
+      case SYSTEM_EVENT_STA_CONNECTED:
+        log(EventType::CONNECTED);
+        // enable ipv6 to make mDNS resolution faster for clients
+        WiFi.enableIpV6();
+        break;
+
+      // case SYSTEM_EVENT_STA_GOT_IP:
+      case SYSTEM_EVENT_AP_STA_GOT_IP6:
+        println("Connected to %s: %s / %s",
+                WiFi.SSID().c_str(),
+                WiFi.localIP().toString().c_str(),
+                WiFi.localIPv6().toString().c_str());
+        if (!MDNS.begin(MDNS_NAME)) {
+          println("mDNS responder failed");
+        } else {
+          println("mDNS responder started");
+          MDNS.addService("http", "tcp", 80);
+        }
+        break;
+
+      case SYSTEM_EVENT_STA_DISCONNECTED:
+        log(EventType::DISCONNECTED);
+        // pause a second and then attempt to reconnect
+        delay(1000);
+        WiFi.begin(ssid, password);
+        break;
+
+      default:
+        break;
+    }
+  });
+
+  WiFi.begin(ssid, password);
+}
+
 void updateClock() {
   static uint32_t lastTick;
   if (millis() - lastTick >= 1000) {
@@ -112,17 +153,12 @@ void updateDisplay() {
 
   if (WiFi.status() != lastStatus) {
     lastStatus = WiFi.status();
+    println("WiFi status: %s", wifiStatusString(lastStatus));
     lcd.print(0, wifiStatusString(lastStatus));
     if (lastStatus == WL_CONNECTED) {
-      log(EventType::CONNECTED);
-      println("Connected to %s: %s",
-              WiFi.SSID().c_str(),
-              WiFi.localIP().toString().c_str());
       lcd.print(1, WiFi.localIP().toString());
     }
     else {
-      log(EventType::DISCONNECTED);
-      println("WiFi status: %s", wifiStatusString(lastStatus));
       lcd.clear(1); // clear ip
     }
   }
@@ -149,15 +185,6 @@ void updateDisplay() {
 }
 
 void setupServer() {
-  WiFi.begin(ssid, password);
-
-  if (!MDNS.begin(MDNS_NAME)) {
-    println("mDNS responder failed");
-    while (true);
-  }
-  println("mDNS responder started");
-  MDNS.addService("http", "tcp", 80);
-
   String index_html = R"(
     <html>
       <head><meta http-equiv="refresh" content="5"></head>
@@ -382,7 +409,11 @@ void checkTouchSwitch() {
 }
 
 void log(EventType event) {
-#ifndef DEV_MODE
+#ifdef DEV_MODE
+  if (event == EventType::BOOTED) {
+    println("Booted in DEV_MODE");
+  }
+#else
   logger.write(now.unixtime(), event);
 #endif
 }

@@ -1,7 +1,8 @@
 #include <functional>
 #include <RTClib.h>
 #include <SparkFun_External_EEPROM.h>
-#include <Adafruit_FRAM_I2C.h>
+#include <Adafruit_FRAM_I2C.h> // TODO customize this library, read larger chunks
+                               // read Record size for individual logs or read big blocks for iterating
 #include <Utils.h>
 
 struct Record {
