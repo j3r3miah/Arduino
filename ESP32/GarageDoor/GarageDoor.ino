@@ -2,11 +2,12 @@
 // #define DEV_MODE
 
 #include <WiFi.h>
-#include <RTClib.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
 #include <ESPmDNS.h>
-#include <WebServer.h>
 #include <Pushsafer.h>
 #include <Bounce2.h>
+#include <RTClib.h>
 
 #include <EventLog.h>
 #include <WiFiUtils.h>
@@ -49,11 +50,12 @@ Lcd lcd;
 RTC_DS3231 rtc;
 Led led(LED_PIN);
 Bounce reedSwitch;
-WebServer server(80);
+AsyncWebServer server(80);
 WiFiClient pushClient;
 Pushsafer pusher(pusherKey, pushClient);
 FRAMArray storage(0x50, 32768);
 EventLog logger(storage);
+Record lastLog;
 DateTime now;
 
 void setup() {
@@ -84,7 +86,6 @@ void loop() {
   updateDisplay();
   checkReedSwitch();
   checkTouchSwitch();
-  server.handleClient();
 }
 
 void setupClock() {
@@ -200,10 +201,12 @@ void setupServer() {
           <p>
           %now%
         </h2>
+        <!--
         <pre>
 %eventlog_10%
         </pre>
         <a href="/logs">More Logs</a>
+        -->
       </body>
     </html>
   )";
@@ -226,47 +229,52 @@ void setupServer() {
     </html>
   )";
 
-
-  server.on("/", HTTP_GET, [index_html]() {
+  server.on("/", HTTP_GET, [index_html](AsyncWebServerRequest *request) {
     led.blink(1);
-    server.send(200, "text/html", injectVars(index_html));
+    request->send(200, "text/html", injectVars(index_html));
   });
 
-  server.on("/logs", HTTP_GET, [logs_html]() {
+  server.on("/logs", HTTP_GET, [logs_html](AsyncWebServerRequest *request) {
     led.blink(1);
-    server.send(200, "text/html", injectVars(logs_html));
+    request->send(200, "text/html", injectVars(logs_html));
   });
 
-  server.on("/backlight", HTTP_GET, []() {
+  server.on("/backlight", HTTP_GET, [](AsyncWebServerRequest *request) {
     led.blink(1);
     lcd.toggleBacklight();
-    server.sendHeader("Location", "/");
-    server.send(302);
+    AsyncWebServerResponse *response = request->beginResponse(302);
+    response->addHeader("Location", "/");
+    request->send(response);
   });
 
-  server.on("/activate", HTTP_GET, []() {
+  server.on("/activate", HTTP_GET, [](AsyncWebServerRequest *request) {
     led.blink(1);
     activateOpener();
-    server.sendHeader("Location", "/");
-    server.send(302);
+    AsyncWebServerResponse *response = request->beginResponse(302);
+    response->addHeader("Location", "/");
+    request->send(response);
   });
 
-  server.on("/api/status", HTTP_GET, [index_html]() {
+  server.on("/api/status", HTTP_GET, [index_html](AsyncWebServerRequest *request) {
     led.blink(1);
     String json = R"({"door": "%door%", "timestamp": %timestamp%, "rssi": %rssi%})";
-    server.send(200, "application/json", injectVars(json));
+    request->send(200, "application/json", injectVars(json));
   });
 
-  server.on("/api/backlight", HTTP_GET, []() {
+  server.on("/api/backlight", HTTP_GET, [](AsyncWebServerRequest *request) {
     led.blink(1);
     lcd.toggleBacklight();
-    server.send(200, "application/json", R"({"status": "ok"})");
+    request->send(200, "application/json", R"({"status": "ok"})");
   });
 
-  server.on("/api/activate", HTTP_GET, []() {
+  server.on("/api/activate", HTTP_GET, [](AsyncWebServerRequest *request) {
     led.blink(1);
     activateOpener();
-    server.send(200, "application/json", R"({"status": "ok"})");
+    request->send(200, "application/json", R"({"status": "ok"})");
+  });
+
+  server.onNotFound([](AsyncWebServerRequest *request) {
+    request->send(404, "text/plain", "Not found");
   });
 
   server.begin();
@@ -310,11 +318,14 @@ String getVar(const String& var) {
     return now.timestamp();
   }
   else if (var == "eventlog_10") {
-    return getLogs(10, true);
+    // TODO loading logs from FRAM (i2c) in ISR causes crashes
+    // return getLogs(10, true);
+    return "";
   }
   else if (var == "eventlog") {
     // note: FRAM takes about 3ms to read each record
-    return getLogs(INT_MAX, false);
+    // return getLogs(INT_MAX, false);
+    return "";
   }
   return "";
 }
