@@ -55,7 +55,7 @@ WiFiClient pushClient;
 Pushsafer pusher(pusherKey, pushClient);
 FRAMArray storage(0x50, 32768);
 EventLog logger(storage);
-Record lastLog;
+String recentLogs;
 DateTime now;
 
 void setup() {
@@ -201,12 +201,10 @@ void setupServer() {
           <p>
           %now%
         </h2>
-        <!--
         <pre>
 %eventlog_10%
         </pre>
-        <a href="/logs">More Logs</a>
-        -->
+        <!--<a href="/logs">More Logs</a>-->
       </body>
     </html>
   )";
@@ -320,7 +318,7 @@ String getVar(const String& var) {
   else if (var == "eventlog_10") {
     // TODO loading logs from FRAM (i2c) in ISR causes crashes
     // return getLogs(10, true);
-    return "";
+    return recentLogs ? recentLogs : "";
   }
   else if (var == "eventlog") {
     // note: FRAM takes about 3ms to read each record
@@ -423,8 +421,10 @@ void log(EventType event) {
 #ifdef DEV_MODE
   if (event == EventType::BOOTED) {
     println("Booted in DEV_MODE");
+    recentLogs = getLogs(10, false);
   }
 #else
   logger.write(now.unixtime(), event);
+  recentLogs = getLogs(10, false);
 #endif
 }
