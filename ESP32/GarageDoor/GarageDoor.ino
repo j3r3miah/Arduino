@@ -53,9 +53,9 @@ Bounce reedSwitch;
 AsyncWebServer server(80);
 WiFiClient pushClient;
 Pushsafer pusher(pusherKey, pushClient);
-FRAMArray storage(0x50, 32768);
+// FRAMArray storage(0x50, 32768);
+MemoryArray storage(1024);
 EventLog logger(storage);
-String recentLogs;
 DateTime now;
 
 void setup() {
@@ -316,14 +316,12 @@ String getVar(const String& var) {
     return now.timestamp();
   }
   else if (var == "eventlog_10") {
-    // TODO loading logs from FRAM (i2c) in ISR causes crashes
-    // return getLogs(10, true);
-    return recentLogs ? recentLogs : "";
+    // note: loading logs from FRAM (i2c) in ISR causes crashes
+    return getLogs(10, true);
   }
   else if (var == "eventlog") {
     // note: FRAM takes about 3ms to read each record
-    // return getLogs(INT_MAX, false);
-    return "";
+    return getLogs(INT_MAX, false);
   }
   return "";
 }
@@ -421,10 +419,8 @@ void log(EventType event) {
 #ifdef DEV_MODE
   if (event == EventType::BOOTED) {
     println("Booted in DEV_MODE");
-    recentLogs = getLogs(10, false);
   }
 #else
   logger.write(now.unixtime(), event);
-  recentLogs = getLogs(10, false);
 #endif
 }
